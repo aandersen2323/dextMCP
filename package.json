@@ -1,0 +1,28 @@
+{
+  "name": "langchain-project",
+  "version": "1.0.0",
+  "description": "A basic Node.js project with LangChain MCP adapters",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nodejs",
+    "javascript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@langchain/mcp-adapters": "^0.6.0",
+    "@langchain/openai": "^0.6.16",
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.3",
+    "langchain": "^0.3.36",
+    "mcp-remote-oauth-client-provider": "1.0.2",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "sqlite3": "^5.1.7"
+  }
+}
