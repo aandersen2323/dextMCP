@@ -94,22 +94,6 @@ async function ensureMCPClientReady() {
     return await mcpClientInitPromise;
 }
 
-// Add an addition tool
-server.registerTool(
-    'add',
-    {
-        title: 'Addition Tool',
-        description: 'Add two numbers',
-        inputSchema: { a: z.number(), b: z.number() }
-    },
-    async (req) => {
-        // const output = { result: a + b };
-        console.log(req)
-        return {
-            content: [{ type: 'text', text: JSON.stringify(req) }]
-        };
-    }
-);
 
 
 server.registerTool(

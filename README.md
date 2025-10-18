@@ -101,8 +101,7 @@ Dext 作为一个智能中间层运行：
 - **本地 MCP 服务端**：`mcp-server.js`
   - `retriever`：根据自然语言描述检索匹配工具，自动区分“新工具”与“已推荐工具”，并返回建议保存的 `session_id`。
   - `executor`：接收工具 MD5 + 参数，代理远程 MCP 工具调用。
-  - `add`：演示用的简单加法工具。
-  - 同时注册了一个示例资源 `greeting://{name}`。
+    - 同时注册了一个示例资源 `greeting://{name}`。
 
 - **向量化逻辑**：`vector_search.js`
   - `indexMCPTools()` 会调用 `vectorizeString()`（定义在 `index.js`）对工具名称 + 描述文本做 Embedding，并写入 SQLite。
@@ -162,16 +161,6 @@ const result = await client.call("executor", {
 });
 ```
 
-#### 3. `add` - 简单计算工具
-演示用的加法工具。
-
-```javascript
-const result = await client.call("add", {
-  a: 10,
-  b: 20
-});
-// 返回: { result: 30 }
-```
 
 ### 编程接口
 
@@ -345,8 +334,7 @@ Dext operates as an intelligent middleware layer:
 - **Local MCP Server**: `mcp-server.js`
   - `retriever`: Retrieves matching tools based on natural language descriptions, automatically distinguishes between "new tools" and "recommended tools", returns suggested `session_id` to save
   - `executor`: Receives tool MD5 + parameters, proxies remote MCP tool calls
-  - `add`: Simple addition tool for demonstration
-  - Also registers a sample resource `greeting://{name}`
+    - Also registers a sample resource `greeting://{name}`
 
 - **Vectorization Logic**: `vector_search.js`
   - `indexMCPTools()` calls `vectorizeString()` (defined in `index.js`) to Embed tool name + description text and write to SQLite
@@ -406,16 +394,6 @@ const result = await client.call("executor", {
 });
 ```
 
-##### 3. `add` - Simple Calculation Tool
-Demonstration addition tool.
-
-```javascript
-const result = await client.call("add", {
-  a: 10,
-  b: 20
-});
-// Returns: { result: 30 }
-```
 
 ### Programming Interface
 
