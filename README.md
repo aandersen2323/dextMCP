@@ -72,10 +72,10 @@ node index.js
 
 ```env
 # Embedding API 配置
-EMBEDDING_API_KEY=your-embedding-api-key-here
-EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-EMBEDDING_MODEL_NAME=doubao-embedding-text-240715
-EMBEDDING_VECTOR_DIMENSION=1024
+EMBEDDING_NG_API_KEY=your-embedding-api-key-here
+EMBEDDING_NG_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+EMBEDDING_NG_MODEL_NAME=doubao-embedding-text-240715
+EMBEDDING_NG_VECTOR_DIMENSION=1024
 
 # 其他配置
 MCP_SERVER_URL=http://localhost:8788/mcp
@@ -138,22 +138,22 @@ const vectors = await vectorizeMultipleStrings(["文本1", "文本2"], apiKey);
 
 #### vectorizeString(text, apiKey?)
 - `text`: 要向量化的字符串
-- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件中读取EMBEDDING_API_KEY
+- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件EMBEDDING_DDING_API_KEY
 - 返回值: Promise<number[]> - 向量数组
 
 #### vectorizeMultipleStrings(texts, apiKey?)
 - `texts`: 要向量化的字符串数组
-- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件中读取EMBEDDING_API_KEY
+- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件EMBEDDING_DDING_API_KEY
 - 返回值: Promise<number[][]> - 向量数组的数组
 
 ### 配置变量说明
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `EMBEDDING_API_KEY` | - | Embedding API密钥（必须设置） |
-| `EMBEDDING_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` | API端点地址 |
-| `EMBEDDING_MODEL_NAME` | `doubao-embedding-text-240715` | 使用的模型名称 |
-| `EMBEDDING_VECTOR_DIMENSION` | `1024` | 预期的向量维度 |
+| `EMBEDDING_NG_API_KEY` | - | Embedding API密钥（必须设置） |
+| `EMBEDDING_NG_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` | API端点地址 |
+| `EMBEDDING_NG_MODEL_NAME` | `doubao-embedding-text-240715` | 使用的模型名称 |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | `1024` | 预期的向量维度 |
 
 ### 模型配置信息
 

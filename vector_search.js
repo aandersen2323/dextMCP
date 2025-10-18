@@ -136,7 +136,7 @@ class VectorSearch {
     async recommendTools(query, mcpClient, modelName = null, options = {}) {
         try {
             // 使用默认模型名称
-            const defaultModelName = modelName || process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
+            const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
             
             const {
                 topK = 5,
@@ -196,7 +196,7 @@ class VectorSearch {
      */
     async indexMCPTools(mcpClient, modelName = null) {
         try {
-            const defaultModelName = modelName || process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
+            const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
             
             console.log('📊 开始为MCP工具建立向量索引 (使用sqlite-vec)...');
             console.log(`🔧 使用模型: ${defaultModelName}`);
@@ -409,7 +409,7 @@ class VectorSearch {
             const {
                 topK = 5,
                 threshold = 0.1,
-                modelName = process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715'
+                modelName = process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715'
             } = options;
 
             const results = await this.searchSimilarTools(query, modelName, topK, threshold);
@@ -445,7 +445,7 @@ class VectorSearch {
      */
     async clearIndex(modelName = null) {
         try {
-            const defaultModelName = modelName || process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
+            const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
             
             console.log(`🗑️  清理向量索引: ${defaultModelName}`);
             
