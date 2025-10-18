@@ -56,3 +56,5 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.temp
+
+tools_vector.db
