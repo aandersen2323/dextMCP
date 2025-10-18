@@ -9,8 +9,8 @@ import { initializeMCPClient, getMCPClient } from './index.js';
 import crypto from 'crypto';
 
 // 获取动态服务器名称
-const mcpToolsInfo = global.mcpToolsInfo || { serverName: 'dextrous', tools: [] };
-const dynamicServerName = mcpToolsInfo.serverName || 'dextrous';
+const mcpToolsInfo = global.mcpToolsInfo || { serverName: 'dext', tools: [] };
+const dynamicServerName = mcpToolsInfo.serverName || 'dext';
 
 // Create an MCP server with dynamic name
 const server = new McpServer({
@@ -354,7 +354,7 @@ app.get('/health', cors(corsOptions), (_req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        server: 'dextrous MCP server',
+        server: 'dext MCP server',
         version: '1.0.0'
     });
 });

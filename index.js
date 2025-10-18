@@ -102,6 +102,7 @@ let globalMCPClient = null;
 async function initializeMCPClient() {
     try {
         const serverUrl = process.env.MCP_SERVER_URL || 'http://localhost:8788/mcp';
+        const linearServerUrl = 'https://mcp.linear.app/mcp'
         const callbackPort = parseInt(process.env.MCP_CALLBACK_PORT || '12334');
         // 创建OAuth认证提供者
         const authProvider = OAuthClientProvider.createWithAutoAuth({
@@ -110,6 +111,12 @@ async function initializeMCPClient() {
             host: "localhost",
             clientName: 'Feishu Comment Monitor',
         });
+        // const linearAuthProvider = OAuthClientProvider.createWithAutoAuth({
+        //     serverUrl:linearServerUrl,
+        //     callbackPort,
+        //     host: "localhost",
+        //     clientName: 'Linear Comment Monitor',
+        // });
         // Create client and connect to server
         const client = new MultiServerMCPClient({
             // Global tool configuration options
@@ -135,7 +142,11 @@ async function initializeMCPClient() {
                   "headers": {
                     "CONTEXT7_API_KEY": "ctx7sk-a8793548-0736-495c-a102-999d8309571a"
                   }
-                }
+                },
+                // "linear": {
+                //     "url": linearServerUrl,
+                //     "authProvider":linearAuthProvider
+                // },
             },
         });
 
@@ -312,7 +323,7 @@ async function main(){
         // 获取所有工具名称并生成动态服务器名称
         const tools = await mcpClient.getTools();
         const toolNames = tools.map(tool => tool.name);
-        const dynamicServerName = `dextrous-with-${toolNames.join(', ')}`;
+        const dynamicServerName = `dext-with-${toolNames.join(', ')}`;
 
         console.log(`动态服务器名称: ${dynamicServerName}`);
 
@@ -329,7 +340,7 @@ async function main(){
         console.log('MCP客户端初始化失败，但应用仍可正常运行。');
         // 即使MCP客户端初始化失败，也启动基础的MCP服务器
         global.mcpToolsInfo = {
-            serverName: 'dextrous',
+            serverName: 'dext',
             tools: []
         };
         await startMCPServer();
