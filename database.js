@@ -123,13 +123,13 @@ class VectorDatabase {
     saveToolVector(toolName, description, vector, modelName) {
         try {
             const toolMD5 = this.generateToolMD5(toolName, description);
-            
+
             // 检查是否已存在
             const existingStmt = this.db.prepare('SELECT id FROM tool_vectors WHERE tool_md5 = ? AND model_name = ?');
             const existing = existingStmt.get(toolMD5, modelName);
-            
+
             let toolId;
-            
+
             if (existing) {
                 // 更新现有记录
                 const updateStmt = this.db.prepare('UPDATE tool_vectors SET tool_name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -143,20 +143,20 @@ class VectorDatabase {
                 toolId = result.lastInsertRowid;
                 console.log(`✅ 保存工具元数据: ${toolName} (ID: ${toolId})`);
             }
-            
+
             // 将向量插入到vec_tool_embeddings表中
             const vectorFloat32 = new Float32Array(vector);
             const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(tool_vector) VALUES (?)');
             const vecResult = vecInsertStmt.run(vectorFloat32);
-            
+
             const vecRowId = vecResult.lastInsertRowid;
-            
+
             // 在映射表中建立关联
             const mappingStmt = this.db.prepare('INSERT OR REPLACE INTO tool_mapping (rowid, tool_id) VALUES (?, ?)');
             mappingStmt.run(vecRowId, toolId);
-            
+
             console.log(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${vecRowId}, 维度: ${vector.length})`);
-            
+
             return toolId;
         } catch (error) {
             console.error(`❌ 保存工具向量失败 (${toolName}):`, error.message);
@@ -348,6 +348,157 @@ class VectorDatabase {
             return stats;
         } catch (error) {
             console.error('❌ 获取统计信息失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取session的历史检索工具
+     * @param {string} sessionId - 会话ID
+     * @returns {Array} 历史检索的工具列表
+     */
+    getSessionHistory(sessionId) {
+        try {
+            const stmt = this.db.prepare(`
+                SELECT tool_md5, tool_name, retrieved_at
+                FROM session_tool_history
+                WHERE session_id = ?
+                ORDER BY retrieved_at DESC
+            `);
+            const results = stmt.all(sessionId);
+            console.log(`📋 获取session ${sessionId} 的历史记录: ${results.length} 个工具`);
+            return results;
+        } catch (error) {
+            console.error('❌ 获取session历史记录失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 检查工具是否已被session检索过
+     * @param {string} sessionId - 会话ID
+     * @param {string} toolMD5 - 工具MD5
+     * @returns {boolean} 是否已检索过
+     */
+    isToolRetrievedBySession(sessionId, toolMD5) {
+        try {
+            const stmt = this.db.prepare(`
+                SELECT COUNT(*) as count
+                FROM session_tool_history
+                WHERE session_id = ? AND tool_md5 = ?
+            `);
+            const result = stmt.get(sessionId, toolMD5);
+            return result.count > 0;
+        } catch (error) {
+            console.error('❌ 检查工具检索状态失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 记录session检索的工具
+     * @param {string} sessionId - 会话ID
+     * @param {string} toolMD5 - 工具MD5
+     * @param {string} toolName - 工具名称
+     * @returns {number} 插入的记录ID
+     */
+    recordSessionToolRetrieval(sessionId, toolMD5, toolName) {
+        try {
+            const stmt = this.db.prepare(`
+                INSERT OR IGNORE INTO session_tool_history (session_id, tool_md5, tool_name)
+                VALUES (?, ?, ?)
+            `);
+            const result = stmt.run(sessionId, toolMD5, toolName);
+            if (result.changes > 0) {
+                console.log(`✅ 记录session工具检索: ${sessionId} -> ${toolName} (MD5: ${toolMD5})`);
+                return result.lastInsertRowid;
+            } else {
+                console.log(`⚠️ 工具已存在，跳过记录: ${sessionId} -> ${toolName}`);
+                return null;
+            }
+        } catch (error) {
+            console.error('❌ 记录session工具检索失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 批量记录session检索的工具
+     * @param {string} sessionId - 会话ID
+     * @param {Array} tools - 工具列表，格式: [{toolMD5, toolName}, ...]
+     * @returns {Array<number>} 插入的记录ID数组
+     */
+    recordSessionToolRetrievalBatch(sessionId, tools) {
+        try {
+            const results = [];
+
+            // 开始事务
+            const transaction = this.db.transaction((sessionId, tools) => {
+                for (const tool of tools) {
+                    const { toolMD5, toolName } = tool;
+                    const result = this.recordSessionToolRetrieval(sessionId, toolMD5, toolName);
+                    if (result) {
+                        results.push(result);
+                    }
+                }
+            });
+
+            // 执行事务
+            transaction(sessionId, tools);
+
+            console.log(`✅ 批量记录session工具检索完成: ${sessionId} -> ${results.length} 个新工具`);
+            return results;
+        } catch (error) {
+            console.error('❌ 批量记录session工具检索失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 清理session的历史记录
+     * @param {string} sessionId - 会话ID
+     * @returns {number} 删除的记录数
+     */
+    clearSessionHistory(sessionId) {
+        try {
+            const stmt = this.db.prepare('DELETE FROM session_tool_history WHERE session_id = ?');
+            const result = stmt.run(sessionId);
+            console.log(`🗑️ 清理session历史记录: ${sessionId} (删除数量: ${result.changes})`);
+            return result.changes;
+        } catch (error) {
+            console.error('❌ 清理session历史记录失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取session的统计信息
+     * @param {string} sessionId - 会话ID
+     * @returns {Object} 统计信息
+     */
+    getSessionStats(sessionId) {
+        try {
+            const countStmt = this.db.prepare(`
+                SELECT COUNT(*) as count
+                FROM session_tool_history
+                WHERE session_id = ?
+            `);
+            const countResult = countStmt.get(sessionId);
+
+            const latestStmt = this.db.prepare(`
+                SELECT MAX(retrieved_at) as latest_retrieval
+                FROM session_tool_history
+                WHERE session_id = ?
+            `);
+            const latestResult = latestStmt.get(sessionId);
+
+            return {
+                session_id: sessionId,
+                tools_count: countResult.count,
+                latest_retrieval: latestResult.latest_retrieval
+            };
+        } catch (error) {
+            console.error('❌ 获取session统计信息失败:', error.message);
             throw error;
         }
     }

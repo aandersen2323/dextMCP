@@ -24,11 +24,23 @@ CREATE TABLE IF NOT EXISTS tool_mapping (
     FOREIGN KEY (tool_id) REFERENCES tool_vectors(id) ON DELETE CASCADE
 );
 
+-- Session工具检索历史表
+CREATE TABLE IF NOT EXISTS session_tool_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,                      -- 会话ID
+    tool_md5 TEXT NOT NULL,                        -- 工具MD5
+    tool_name TEXT NOT NULL,                       -- 工具名称
+    retrieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,-- 检索时间
+    UNIQUE(session_id, tool_md5)                   -- 防止重复记录
+);
+
 -- 创建索引以提高查询性能
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_md5 ON tool_vectors(tool_md5);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_model ON tool_vectors(model_name);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_name ON tool_vectors(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tool_mapping_tool_id ON tool_mapping(tool_id);
+CREATE INDEX IF NOT EXISTS idx_session_history_session_id ON session_tool_history(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_history_tool_md5 ON session_tool_history(tool_md5);
 
 -- 创建视图方便查询
 CREATE VIEW IF NOT EXISTS v_tool_search AS
