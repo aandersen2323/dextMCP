@@ -159,7 +159,7 @@ server.registerTool(
             const knownToolMD5s = new Set(sessionHistory.map(item => item.tool_md5));
             console.log(`📋 Session ${finalSessionId} 已检索过的工具数量: ${knownToolMD5s.size}`);
 
-            const modelName = process.env.DOUBAO_MODEL_NAME || 'doubao-embedding-text-240715';
+            const modelName = process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
             const topK = parseInt(process.env.TOOL_RETRIEVER_TOP_K || '5', 10);
             const threshold = Number(process.env.TOOL_RETRIEVER_THRESHOLD || '0.1');
 

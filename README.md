@@ -71,18 +71,18 @@ node index.js
 使用向量化功能前，需要配置.env文件。项目根目录已包含.env模板文件，请根据需要修改配置：
 
 ```env
-# Doubao Embedding API 配置
-DOUBAO_API_KEY=your-doubao-api-key-here
-DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-DOUBAO_MODEL_NAME=doubao-embedding-text-240715
-DOUBAO_VECTOR_DIMENSION=1024
+# Embedding API 配置
+EMBEDDING_API_KEY=your-embedding-api-key-here
+EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+EMBEDDING_MODEL_NAME=doubao-embedding-text-240715
+EMBEDDING_VECTOR_DIMENSION=1024
 
 # 其他配置
 MCP_SERVER_URL=http://localhost:8788/mcp
 MCP_CALLBACK_PORT=12334
 ```
 
-**重要**：请将 `your-doubao-api-key-here` 替换为您的实际API密钥。
+**重要**：请将 `your-embedding-api-key-here` 替换为您的实际API密钥。
 
 ### 基本使用示例
 
@@ -138,22 +138,22 @@ const vectors = await vectorizeMultipleStrings(["文本1", "文本2"], apiKey);
 
 #### vectorizeString(text, apiKey?)
 - `text`: 要向量化的字符串
-- `apiKey`: (可选) Doubao API密钥。如果不提供，会自动从.env文件中读取DOUBAO_API_KEY
+- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件中读取EMBEDDING_API_KEY
 - 返回值: Promise<number[]> - 向量数组
 
 #### vectorizeMultipleStrings(texts, apiKey?)
 - `texts`: 要向量化的字符串数组
-- `apiKey`: (可选) Doubao API密钥。如果不提供，会自动从.env文件中读取DOUBAO_API_KEY
+- `apiKey`: (可选) Embedding API密钥。如果不提供，会自动从.env文件中读取EMBEDDING_API_KEY
 - 返回值: Promise<number[][]> - 向量数组的数组
 
 ### 配置变量说明
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `DOUBAO_API_KEY` | - | Doubao API密钥（必须设置） |
-| `DOUBAO_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` | API端点地址 |
-| `DOUBAO_MODEL_NAME` | `doubao-embedding-text-240715` | 使用的模型名称 |
-| `DOUBAO_VECTOR_DIMENSION` | `1024` | 预期的向量维度 |
+| `EMBEDDING_API_KEY` | - | Embedding API密钥（必须设置） |
+| `EMBEDDING_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` | API端点地址 |
+| `EMBEDDING_MODEL_NAME` | `doubao-embedding-text-240715` | 使用的模型名称 |
+| `EMBEDDING_VECTOR_DIMENSION` | `1024` | 预期的向量维度 |
 
 ### 模型配置信息
 

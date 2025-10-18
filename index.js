@@ -38,16 +38,16 @@ async function vectorizeString(text) {
     try {
         // 从环境变量获取配置，参数优先级更高
         const config = {
-            openAIApiKey: process.env.DOUBAO_API_KEY,
-            model: process.env.DOUBAO_MODEL_NAME || "doubao-embedding-text-240715",
-            dimensions: parseInt(process.env.DOUBAO_VECTOR_DIMENSION) || 1024,
+            openAIApiKey: process.env.EMBEDDING_API_KEY,
+            model: process.env.EMBEDDING_MODEL_NAME || "doubao-embedding-text-240715",
+            dimensions: parseInt(process.env.EMBEDDING_VECTOR_DIMENSION) || 1024,
             configuration: {
-                baseURL: process.env.DOUBAO_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3"
+                baseURL: process.env.EMBEDDING_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3"
             }
         };
 
         if (!config.openAIApiKey) {
-            throw new Error('API密钥未设置。请在.env文件中设置DOUBAO_API_KEY或作为参数传入。');
+            throw new Error('API密钥未设置。请在.env文件中设置EMBEDDING_API_KEY或作为参数传入。');
         }
 
         // 配置doubao embedding model
@@ -69,16 +69,16 @@ async function vectorizeMultipleStrings(texts) {
     try {
         // 从环境变量获取配置，参数优先级更高
         const config = {
-            openAIApiKey: process.env.DOUBAO_API_KEY,
-            model: process.env.DOUBAO_MODEL_NAME || "doubao-embedding-text-240715",
-            dimensions: parseInt(process.env.DOUBAO_VECTOR_DIMENSION) || 1024,
+            openAIApiKey: process.env.EMBEDDING_API_KEY,
+            model: process.env.EMBEDDING_MODEL_NAME || "doubao-embedding-text-240715",
+            dimensions: parseInt(process.env.EMBEDDING_VECTOR_DIMENSION) || 1024,
             configuration: {
-                baseURL: process.env.DOUBAO_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3"
+                baseURL: process.env.EMBEDDING_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3"
             }
         };
 
         if (!config.openAIApiKey) {
-            throw new Error('API密钥未设置。请在.env文件中设置DOUBAO_API_KEY或作为参数传入。');
+            throw new Error('API密钥未设置。请在.env文件中设置EMBEDDING_API_KEY或作为参数传入。');
         }
 
         // 配置doubao embedding model
@@ -160,13 +160,13 @@ function getMCPClient() {
 // 向量化功能测试示例
 async function testVectorization() {
     // 检查环境变量配置
-    if (!process.env.DOUBAO_API_KEY) {
-        console.log('\n⚠️  提示：要测试向量化功能，请在.env文件中配置DOUBAO_API_KEY');
+    if (!process.env.EMBEDDING_API_KEY) {
+        console.log('\n⚠️  提示：要测试向量化功能，请在.env文件中配置EMBEDDING_API_KEY');
         console.log('配置示例:');
-        console.log('DOUBAO_API_KEY=your-doubao-api-key-here');
-        console.log('DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3');
-        console.log('DOUBAO_MODEL_NAME=doubao-embedding-text-240715');
-        console.log('DOUBAO_VECTOR_DIMENSION=1024');
+        console.log('EMBEDDING_API_KEY=your-embedding-api-key-here');
+        console.log('EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3');
+        console.log('EMBEDDING_MODEL_NAME=doubao-embedding-text-240715');
+        console.log('EMBEDDING_VECTOR_DIMENSION=1024');
         console.log('');
         console.log('使用示例:');
         console.log('import { vectorizeString, vectorizeMultipleStrings } from "./index.js";');
@@ -182,9 +182,9 @@ async function testVectorization() {
     try {
         console.log('\n🚀 开始测试向量化功能...');
         console.log(`📋 当前配置:`);
-        console.log(`   - 模型: ${process.env.DOUBAO_MODEL_NAME || 'doubao-embedding-text-240715'}`);
-        console.log(`   - 端点: ${process.env.DOUBAO_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'}`);
-        console.log(`   - 预期维度: ${process.env.DOUBAO_VECTOR_DIMENSION || '1024'}`);
+        console.log(`   - 模型: ${process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715'}`);
+        console.log(`   - 端点: ${process.env.EMBEDDING_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'}`);
+        console.log(`   - 预期维度: ${process.env.EMBEDDING_VECTOR_DIMENSION || '1024'}`);
         
         // 测试单个字符串向量化（使用.env配置）
         const testText = "这是一个测试文本，用于验证doubao embedding模型的功能";
@@ -335,7 +335,7 @@ async function main(){
         await startMCPServer();
     }
     // 如果设置了API密钥，自动运行测试
-    if (process.env.DOUBAO_API_KEY && process.env.DOUBAO_API_KEY !== 'your-doubao-api-key-here') {
+    if (process.env.EMBEDDING_API_KEY && process.env.EMBEDDING_API_KEY !== 'your-doubao-api-key-here') {
         console.log('\n检测到API密钥配置，开始向量化测试...');
         testVectorization().then(() => {
             // 向量化测试完成后，运行向量搜索测试
