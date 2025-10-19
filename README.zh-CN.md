@@ -17,7 +17,7 @@ Dext 作为一个智能中间层运行：
 
 ```mermaid
 graph TB
-    User[用户/应用程序] -->|自然语言查询| LocalMCP[本地 MCP 服务器<br/>localhost:8789/mcp]
+    User[用户/应用程序] -->|自然语言查询| LocalMCP[本地 MCP 服务器<br/>localhost:3398/mcp]
 
     LocalMCP -->|语义工具搜索| VS[向量搜索引擎]
     LocalMCP -->|工具执行代理| MCP[多服务器 MCP 客户端]
@@ -112,9 +112,8 @@ graph TB
    | `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
    | `EMBEDDING_MODEL_NAME` | Embedding 模型名称 | - | ❌ |
    | `EMBEDDING_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
-   | `MCP_SERVER_URL` | 远程 MCP 服务器（示例：飞书）入口 | `http://localhost:8788/mcp` | ❌ |
    | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
-   | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `8789` | ❌ |
+   | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3398` | ❌ |
    | `TOOL_RETRIEVER_TOP_K` | `retriever` 默认返回的工具数量 | `3` | ❌ |
    | `TOOL_RETRIEVER_THRESHOLD` | 最低相似度阈值 | `0.1` | ❌ |
 
@@ -163,7 +162,7 @@ graph TB
 
 ### MCP 服务端 API
 
-启动后，本地 MCP 服务器将在 `http://localhost:8789/mcp` 提供以下工具：
+启动后，本地 MCP 服务器将在 `http://localhost:3398/mcp` 提供以下工具：
 
 #### 1. `retriever` - 语义工具搜索
 根据自然语言描述检索最相关的工具。

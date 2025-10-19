@@ -98,25 +98,86 @@ async function vectorizeMultipleStrings(texts) {
 // 全局MCP客户端变量
 let globalMCPClient = null;
 
+// 解析环境变量占位符
+function parseEnvVariable(value) {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    // 匹配 ${VARIABLE_NAME:default_value} 格式
+    const match = value.match(/^\$\{([^:}]+)(?::([^}]*))?\}$/);
+    if (!match) {
+        return value;
+    }
+
+    const variableName = match[1];
+    const defaultValue = match[2] || '';
+    return process.env[variableName] || defaultValue;
+}
+
 // MCP客户端配置和初始化
 async function initializeMCPClient() {
     try {
-        const serverUrl = process.env.MCP_SERVER_URL || 'http://localhost:8788/mcp';
-        const linearServerUrl = 'https://mcp.linear.app/mcp'
-        const callbackPort = parseInt(process.env.MCP_CALLBACK_PORT || '12334');
-        // 创建OAuth认证提供者
-        const authProvider = OAuthClientProvider.createWithAutoAuth({
-            serverUrl,
-            callbackPort,
-            host: "localhost",
-            clientName: 'Feishu Comment Monitor',
-        });
-        // const linearAuthProvider = OAuthClientProvider.createWithAutoAuth({
-        //     serverUrl:linearServerUrl,
-        //     callbackPort,
-        //     host: "localhost",
-        //     clientName: 'Linear Comment Monitor',
-        // });
+        // 读取MCP服务器配置文件
+        const fs = await import('fs');
+        const path = await import('path');
+
+        let mcpConfig;
+        try {
+            const configPath = path.join(process.cwd(), 'mcp-servers.json');
+            const configData = fs.readFileSync(configPath, 'utf8');
+            mcpConfig = JSON.parse(configData);
+        } catch (error) {
+            console.error('读取MCP配置文件失败:', error.message);
+            return null;
+        }
+
+        // 解析OAuth配置
+        const oauthConfig = mcpConfig.oauth || {};
+        const callbackPort = parseInt(parseEnvVariable(oauthConfig.callbackPort) || '12334');
+        const host = oauthConfig.host || 'localhost';
+        const clientName = oauthConfig.clientName || 'Dext';
+
+        // 创建OAuth认证提供者映射
+        const authProviders = {};
+
+        // 为所有配置了URL的服务器创建AuthProvider
+        for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+            if (serverConfig.url) {
+                authProviders[serverName] = OAuthClientProvider.createWithAutoAuth({
+                    serverUrl: serverConfig.url,
+                    callbackPort,
+                    host,
+                    clientName,
+                });
+                console.log(`为 ${serverName} 创建了OAuth认证提供者`);
+            }
+        }
+
+        // 构建MCP服务器配置
+        const mcpServersConfig = {};
+
+        for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+            const serverConfigForClient = {
+                url: serverConfig.url
+            };
+
+            // 添加认证提供者（所有配置了URL的服务器）
+            if (serverConfig.url && authProviders[serverName]) {
+                serverConfigForClient.authProvider = authProviders[serverName];
+            }
+
+            // 添加自定义头部（如果配置了headers）
+            if (serverConfig.headers) {
+                serverConfigForClient.headers = {};
+                for (const [headerName, headerValue] of Object.entries(serverConfig.headers)) {
+                    serverConfigForClient.headers[headerName] = parseEnvVariable(headerValue);
+                }
+            }
+
+            mcpServersConfig[serverName] = serverConfigForClient;
+        }
+
         // Create client and connect to server
         const client = new MultiServerMCPClient({
             // Global tool configuration options
@@ -130,24 +191,8 @@ async function initializeMCPClient() {
             // Use standardized content block format in tool outputs
             useStandardContentBlocks: true,
 
-
             // Server configuration
-            mcpServers: {
-                feishu: {
-                    url: serverUrl,
-                    authProvider
-                },
-                context7: {
-                  "url": "https://mcp.context7.com/mcp",
-                  "headers": {
-                    "CONTEXT7_API_KEY": "ctx7sk-a8793548-0736-495c-a102-999d8309571a"
-                  }
-                },
-                // "linear": {
-                //     "url": linearServerUrl,
-                //     "authProvider":linearAuthProvider
-                // },
-            },
+            mcpServers: mcpServersConfig,
         });
 
         const tools = await client.getTools();

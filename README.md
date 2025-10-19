@@ -17,7 +17,7 @@ Dext operates as an intelligent middleware layer:
 
 ```mermaid
 graph TB
-    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:8789/mcp]
+    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:3398/mcp]
 
     LocalMCP -->|Semantic Tool Search| VS[Vector Search Engine]
     LocalMCP -->|Tool Execution Proxy| MCP[Multi-Server MCP Client]
@@ -112,9 +112,8 @@ graph TB
    | `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
    | `EMBEDDING_MODEL_NAME` | Embedding model name | - | ❌ |
    | `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
-   | `MCP_SERVER_URL` | Remote MCP server (example: Feishu) endpoint | `http://localhost:8788/mcp` | ❌ |
    | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
-   | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `8789` | ❌ |
+   | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3398` | ❌ |
    | `TOOL_RETRIEVER_TOP_K` | Default number of tools returned by `retriever` | `3` | ❌ |
    | `TOOL_RETRIEVER_THRESHOLD` | Minimum similarity threshold | `0.1` | ❌ |
 
@@ -134,7 +133,7 @@ graph TB
    Console logs will display:
    - Whether MCP client successfully connected to remote servers and their tool lists
    - Vector database initialization and self-check results
-   - Local MCP server listening address (e.g., `http://localhost:8789/mcp`)
+   - Local MCP server listening address (e.g., `http://localhost:3398/mcp`)
 
 ## Runtime Behavior
 
@@ -163,7 +162,7 @@ graph TB
 
 ### MCP Server API
 
-After startup, the local MCP server will provide the following tools at `http://localhost:8789/mcp`:
+After startup, the local MCP server will provide the following tools at `http://localhost:3398/mcp`:
 
 #### 1. `retriever` - Semantic Tool Search
 Retrieve the most relevant tools based on natural language descriptions.
