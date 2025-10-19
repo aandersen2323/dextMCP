@@ -258,12 +258,12 @@ class VectorSearch {
                         if (similarTools.length > 0) {
                             console.log(`📊 找到 ${similarTools.length} 个候选相似工具`);
                             
-                            // 判断是否需要删除相似工具（使用0.97的严格阈值）
+                            // 判断是否需要删除相似工具（使用0.96的严格阈值）
                             const toDelete = this.identifySimilarToolsToDelete(
                                 tool.toolName,
                                 tool.description,
                                 similarTools,
-                                0.97
+                                0.96
                             );
                             
                             // 删除被判定为过时的相似工具
@@ -365,10 +365,10 @@ class VectorSearch {
      * @param {string} newToolName - 新工具名称
      * @param {string} newDescription - 新工具描述
      * @param {Array} similarTools - 相似工具列表
-     * @param {number} similarityThreshold - 相似度阈值 (默认0.97)
+     * @param {number} similarityThreshold - 相似度阈值 (默认0.96)
      * @returns {Array} 需要删除的工具列表
      */
-    identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = 0.97) {
+    identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = 0.96) {
         const toDelete = [];
         
         console.log(`🔍 检查 ${similarTools.length} 个相似工具是否需要删除 (阈值: ${similarityThreshold})`);
@@ -381,7 +381,7 @@ class VectorSearch {
             console.log(`   - 向量相似度: ${vectorSimilarity.toFixed(4)}`);
             console.log(`   - 名称相似度: ${nameSimilarity.toFixed(4)}`);
             
-            // 判断逻辑：向量相似度 >= 0.97 则认为是非常相似的工具
+            // 判断逻辑：向量相似度 >= 0.96 则认为是非常相似的工具
             if (vectorSimilarity >= similarityThreshold) {
                 console.log(`🎯 判定为非常相似工具，将被删除: ${similar.tool_name}`);
                 toDelete.push(similar);

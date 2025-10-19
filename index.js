@@ -184,7 +184,7 @@ async function initializeMCPClient() {
             // Whether to throw on errors if a tool fails to load (optional, default: true)
             throwOnLoadError: true,
             // Whether to prefix tool names with the server name (optional, default: false)
-            prefixToolNameWithServerName: false,
+            prefixToolNameWithServerName: true,
             // Optional additional prefix for tool names (optional, default: "")
             additionalToolNamePrefix: "",
 
