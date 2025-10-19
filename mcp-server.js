@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 
 // 从配置文件读取服务器信息并生成增强描述
-function getEnhancedServerDescription() {
+async function getEnhancedServerDescription() {
     try {
         const configPath = path.join(process.cwd(), 'mcp-servers.json');
         const configData = fs.readFileSync(configPath, 'utf8');
@@ -19,18 +19,58 @@ function getEnhancedServerDescription() {
 
         const serverDescriptions = [];
 
-        if (mcpConfig.servers) {
-            for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
-                if (serverConfig.description) {
-                    serverDescriptions.push(`${serverName}(${serverConfig.description})`);
-                } else {
-                    serverDescriptions.push(serverName);
+        // 确保 MCP 客户端已准备就绪
+        try {
+            const mcpClient = await ensureMCPClientReady();
+            const tools = await mcpClient.getTools();
+
+            // 按服务器分组工具
+            const toolsByServer = {};
+            tools.forEach(tool => {
+                // 从工具名称中提取服务器名称（格式：serverName__toolName）
+                const parts = tool.name.split('__');
+                const serverName = parts[0] || 'unknown';
+                const toolName = parts.slice(1).join('__') || tool.name;
+
+                if (!toolsByServer[serverName]) {
+                    toolsByServer[serverName] = [];
+                }
+                toolsByServer[serverName].push(toolName);
+            });
+
+            if (mcpConfig.servers) {
+                for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+                    let description = serverName;
+
+                    if (serverConfig.description) {
+                        description += `(${serverConfig.description})`;
+                    }
+
+                    // 添加工具名称列表
+                    const serverTools = toolsByServer[serverName];
+                    if (serverTools && serverTools.length > 0) {
+                        description += ` - 工具: ${serverTools.join(', ')}`;
+                    }
+
+                    serverDescriptions.push(description);
+                }
+            }
+        } catch (error) {
+            console.error('获取MCP工具信息失败:', error.message);
+            // 如果获取工具信息失败，仍然返回基本的服务器描述
+            if (mcpConfig.servers) {
+                for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+                    if (serverConfig.description) {
+                        serverDescriptions.push(`${serverName}(${serverConfig.description})`);
+                    } else {
+                        serverDescriptions.push(serverName);
+                    }
                 }
             }
         }
 
         if (serverDescriptions.length > 0) {
-            return `当前可以使用的服务器：${serverDescriptions.join('、')}`;
+            return `当前可以使用的服务器：${serverDescriptions.join('、')}，务必不要直接使用它们，只可以使用它们用来检索！`;
         }
 
         return '';
@@ -132,7 +172,7 @@ server.registerTool(
     'retriever',
     {
         title: '工具检索',
-        description: '通过自然语言描述来智能检索相关工具，返回语义最匹配的工具列表及完整信息。'+getEnhancedServerDescription(),
+        description: '通过自然语言描述来智能检索相关工具，返回语义最匹配的工具列表及完整信息。',
         inputSchema: {
             descriptions: z.array(z.string().min(1, 'query不能为空').describe("对假想的工具进行详细描述，即你认为这个工具应该是什么样的。对一个目标工具的描述都写在一个描述中，不要写好几个描述都是描述同一个目标工具的。")).describe("鼓励一次性检索多个目标工具，把你的需求一次性说出来。例如："+`用户想要在飞书文档中插入一个时间轴块。首先我需要获取文档内容，然后根据内容在合适的位置插入时间轴块。
 
@@ -152,9 +192,13 @@ server.registerTool(
             await ensureVectorDatabaseReady();
             const mcpClient = await ensureMCPClientReady();
 
+            // 获取增强的服务器描述
+            const enhancedServerDescription = await getEnhancedServerDescription();
+
             // 处理sessionId：如果用户传入的sessionId没有历史记录，则重新生成
             let finalSessionId = sessionId;
             let needToGenerateNewSession = false;
+            let isFirstTimeSession = false;
 
             if (finalSessionId) {
                 // 检查传入的sessionId是否有历史记录
@@ -170,6 +214,7 @@ server.registerTool(
             if (needToGenerateNewSession) {
                 finalSessionId = Math.random().toString(36).substring(2, 8);
                 console.log(`🆕 生成新的sessionId: ${finalSessionId}`);
+                isFirstTimeSession = true;
             }
 
             // 获取该session的历史检索记录
@@ -271,6 +316,11 @@ server.registerTool(
                     session_history_count: knownToolMD5s.size + newTools.reduce((sum, item) => sum + item.tools.length, 0)
                 }
             };
+
+            // 只在第一次使用该 session 时才返回服务器描述
+            if (isFirstTimeSession) {
+                result.server_description = enhancedServerDescription;
+            }
 
             console.log(`✅ 检索完成 - 新工具: ${result.summary.new_tools_count}, 已知工具: ${result.summary.known_tools_count}`);
 
