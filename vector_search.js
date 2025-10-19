@@ -28,30 +28,32 @@ class VectorSearch {
      * @param {string} modelName - 使用的模型名称
      * @param {number} topK - 返回最相似的K个结果
      * @param {number} threshold - 相似度阈值 (0-1之间)
+     * @param {Array<string>} serverNames - 可选的服务器名称列表，用于过滤工具
      * @returns {Promise<Array>} 相似工具列表
      */
-    async searchSimilarTools(query, modelName, topK = 5, threshold = 0.1) {
+    async searchSimilarTools(query, modelName, topK = 5, threshold = 0.1, serverNames = null) {
         try {
             if (!this.isInitialized) {
                 throw new Error('向量搜索引擎未初始化');
             }
 
-            console.log(`🔍 开始搜索: "${query}" (模型: ${modelName}, topK: ${topK})`);
+            const serverInfo = serverNames && serverNames.length > 0 ? ` (服务器过滤: ${serverNames.join(', ')})` : '';
+            console.log(`🔍 开始搜索: "${query}" (模型: ${modelName}, topK: ${topK}${serverInfo})`);
 
             // 1. 将查询文本向量化
             const queryVector = await vectorizeString(query);
             console.log(`📊 查询向量维度: ${queryVector.length}`);
 
             // 2. 使用sqlite-vec进行高效的向量相似性搜索
-            const results = await this.db.searchSimilarVectors(queryVector, topK, threshold);
-            
+            const results = await this.db.searchSimilarVectors(queryVector, topK, threshold, serverNames);
+
             if (results.length === 0) {
                 console.log('⚠️  没有找到满足条件的相似工具');
                 return [];
             }
 
             console.log(`✅ 搜索完成，找到 ${results.length} 个相似工具 (阈值: ${threshold})`);
-            
+
             // 输出详细结果
             results.forEach((result, index) => {
                 console.log(`${index + 1}. ${result.tool_name} (相似度: ${result.similarity.toFixed(4)}, 距离: ${result.distance.toFixed(4)})`);
@@ -137,20 +139,22 @@ class VectorSearch {
         try {
             // 使用默认模型名称
             const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
-            
+
             const {
                 topK = 5,
                 threshold = 0.1,
-                includeDetails = true
+                includeDetails = true,
+                serverNames = null
             } = options;
 
             console.log(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
             console.log(`📝 查询: "${query}"`);
             console.log(`🔧 模型: ${defaultModelName}`);
-            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}`);
+            const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
+            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}`);
 
             // 1. 搜索相似工具
-            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold);
+            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, serverNames);
 
             if (similarTools.length === 0) {
                 console.log('⚠️  未找到相似的工具');
@@ -179,7 +183,7 @@ class VectorSearch {
             });
 
             console.log(`🎉 工具推荐完成，返回 ${recommendations.length} 个推荐结果`);
-            
+
             return recommendations;
 
         } catch (error) {

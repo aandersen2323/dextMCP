@@ -199,35 +199,74 @@ class VectorDatabase {
      * @param {Array<number>} queryVector - 查询向量
      * @param {number} limit - 返回结果数量限制
      * @param {number} threshold - 相似度阈值
+     * @param {Array<string>} serverNames - 可选的服务器名称列表，用于过滤工具
      * @returns {Array} 相似工具列表
      */
-    searchSimilarVectors(queryVector, limit = 5, threshold = 0.1) {
+    searchSimilarVectors(queryVector, limit = 5, threshold = 0.1, serverNames = null) {
         try {
             const queryVectorFloat32 = new Float32Array(queryVector);
-            
-            // 使用vec_distance_cosine函数的查询方式
-            const stmt = this.db.prepare(`
-                SELECT
-                    tv.id,
-                    tv.tool_md5,
-                    tv.model_name,
-                    tv.tool_name,
-                    tv.description,
-                    vec_distance_cosine(vte.tool_vector, ?) as distance,
-                    (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
-                    tv.created_at
-                FROM vec_tool_embeddings vte
-                JOIN tool_mapping tm ON vte.rowid = tm.rowid
-                JOIN tool_vectors tv ON tm.tool_id = tv.id
-                WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
-                ORDER BY distance ASC
-                LIMIT ?
-            `);
-            
-            const results = stmt.all(queryVectorFloat32, queryVectorFloat32, queryVectorFloat32, threshold, limit);
-            
-            console.log(`📊 向量搜索完成，找到 ${results.length} 个相似工具`);
-            
+
+            let stmt;
+            let params;
+
+            if (serverNames && serverNames.length > 0) {
+                // 构建服务器名称过滤条件
+                const serverConditions = serverNames.map(() => 'tv.tool_name LIKE ?').join(' OR ');
+                const serverParams = serverNames.map(serverName => `${serverName}__%`);
+
+                const sql = `
+                    SELECT
+                        tv.id,
+                        tv.tool_md5,
+                        tv.model_name,
+                        tv.tool_name,
+                        tv.description,
+                        vec_distance_cosine(vte.tool_vector, ?) as distance,
+                        (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
+                        tv.created_at
+                    FROM vec_tool_embeddings vte
+                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
+                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
+                    AND (${serverConditions})
+                    ORDER BY distance ASC
+                    LIMIT ?
+                `;
+
+                stmt = this.db.prepare(sql);
+                params = [queryVectorFloat32, queryVectorFloat32, queryVectorFloat32, threshold, ...serverParams, limit];
+            } else {
+                // 不进行服务器过滤的原始查询
+                const sql = `
+                    SELECT
+                        tv.id,
+                        tv.tool_md5,
+                        tv.model_name,
+                        tv.tool_name,
+                        tv.description,
+                        vec_distance_cosine(vte.tool_vector, ?) as distance,
+                        (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
+                        tv.created_at
+                    FROM vec_tool_embeddings vte
+                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
+                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
+                    ORDER BY distance ASC
+                    LIMIT ?
+                `;
+
+                stmt = this.db.prepare(sql);
+                params = [queryVectorFloat32, queryVectorFloat32, queryVectorFloat32, threshold, limit];
+            }
+
+            const results = stmt.all(...params);
+
+            if (serverNames && serverNames.length > 0) {
+                console.log(`📊 向量搜索完成，找到 ${results.length} 个相似工具 (服务器过滤: ${serverNames.join(', ')})`);
+            } else {
+                console.log(`📊 向量搜索完成，找到 ${results.length} 个相似工具`);
+            }
+
             return results;
         } catch (error) {
             console.error('❌ 向量相似性搜索失败:', error.message);

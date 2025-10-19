@@ -104,15 +104,13 @@ function parseEnvVariable(value) {
         return value;
     }
 
-    // 匹配 ${VARIABLE_NAME:default_value} 格式
-    const match = value.match(/^\$\{([^:}]+)(?::([^}]*))?\}$/);
-    if (!match) {
-        return value;
-    }
+    // 递归替换字符串中的所有环境变量占位符
+    const replaced = value.replace(/\$\{([^:}]+)(?::([^}]*))?\}/g, (match, variableName, defaultValue) => {
+        const envValue = process.env[variableName];
+        return envValue !== undefined ? envValue : (defaultValue || '');
+    });
 
-    const variableName = match[1];
-    const defaultValue = match[2] || '';
-    return process.env[variableName] || defaultValue;
+    return replaced;
 }
 
 // MCP客户端配置和初始化

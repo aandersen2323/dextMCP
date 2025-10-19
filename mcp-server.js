@@ -7,6 +7,38 @@ import VectorSearch from './vector_search.js';
 import VectorDatabase from './database.js';
 import { initializeMCPClient, getMCPClient } from './index.js';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+
+// 从配置文件读取服务器信息并生成增强描述
+function getEnhancedServerDescription() {
+    try {
+        const configPath = path.join(process.cwd(), 'mcp-servers.json');
+        const configData = fs.readFileSync(configPath, 'utf8');
+        const mcpConfig = JSON.parse(configData);
+
+        const serverDescriptions = [];
+
+        if (mcpConfig.servers) {
+            for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+                if (serverConfig.description) {
+                    serverDescriptions.push(`${serverName}(${serverConfig.description})`);
+                } else {
+                    serverDescriptions.push(serverName);
+                }
+            }
+        }
+
+        if (serverDescriptions.length > 0) {
+            return `当前可以使用的服务器：${serverDescriptions.join('、')}`;
+        }
+
+        return '';
+    } catch (error) {
+        console.error('读取MCP配置文件失败:', error.message);
+        return '';
+    }
+}
 
 // 获取动态服务器名称
 const mcpToolsInfo = global.mcpToolsInfo || { serverName: 'dext', tools: [] };
@@ -100,8 +132,9 @@ server.registerTool(
     'retriever',
     {
         title: '工具检索',
-        description: '通过自然语言对工具进行检索返回语义相近的工具列表，包含完整的工具信息，以下是所有工具名称，你觉得哪个有用也可以用名称检索'+dynamicServerName,
-        inputSchema: { descriptions: z.array(z.string().min(1, 'query不能为空').describe("对假想的工具进行详细描述，即你认为这个工具应该是什么样的。对一个目标工具的描述都写在一个描述中，不要写好几个描述都是描述同一个目标工具的。")).describe("鼓励一次性检索多个目标工具，把你的需求一次性说出来。例如："+`用户想要在飞书文档中插入一个时间轴块。首先我需要获取文档内容，然后根据内容在合适的位置插入时间轴块。
+        description: '通过自然语言描述来智能检索相关工具，返回语义最匹配的工具列表及完整信息。'+getEnhancedServerDescription(),
+        inputSchema: {
+            descriptions: z.array(z.string().min(1, 'query不能为空').describe("对假想的工具进行详细描述，即你认为这个工具应该是什么样的。对一个目标工具的描述都写在一个描述中，不要写好几个描述都是描述同一个目标工具的。")).describe("鼓励一次性检索多个目标工具，把你的需求一次性说出来。例如："+`用户想要在飞书文档中插入一个时间轴块。首先我需要获取文档内容，然后根据内容在合适的位置插入时间轴块。
 
 如果你需要：
 
@@ -109,10 +142,11 @@ server.registerTool(
 分析文档内容，确定在哪里插入时间轴块最合适
 创建时间轴内容
 在合适的位置插入时间轴块，你就一次性提出对两个工具的检索：获取飞书文档内容的工具、创建时间轴块的工具`),
-        sessionId:z.string().describe("会话ID，6位字母数字组合")
+            sessionId: z.string().describe("会话ID，6位字母数字组合"),
+            serverNames: z.array(z.string()).optional().describe("可选：指定服务器名称列表来限制检索范围，如 ['feishu', 'linear']")
         },
     },
-    async ({ descriptions, sessionId }) => {
+    async ({ descriptions, sessionId, serverNames }) => {
         try {
             await ensureVectorSearchReady();
             await ensureVectorDatabaseReady();
@@ -159,7 +193,7 @@ server.registerTool(
                     description,
                     mcpClient,
                     modelName,
-                    { topK, threshold, includeDetails: true }
+                    { topK, threshold, includeDetails: true, serverNames }
                 );
 
                 const topResult = recommendations || [];
