@@ -20,26 +20,29 @@ importers:
       better-sqlite3:
         specifier: ^12.4.1
         version: 12.4.1
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.5
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
       express:
-        specifier: ^4.19.2
+        specifier: ^4.21.2
         version: 4.21.2
       langchain:
         specifier: ^0.3.36
         version: 0.3.36(@langchain/core@0.3.78(openai@5.12.2(zod@3.25.76)))(axios@1.12.2)(openai@5.12.2(zod@3.25.76))
       mcp-remote-oauth-client-provider:
-        specifier: 1.0.2
-        version: 1.0.2
+        specifier: ^1.0.6
+        version: 1.0.6
       sqlite-vec:
-        specifier: ^0.1.7-alpha.2
+        specifier: 0.1.7-alpha.2
         version: 0.1.7-alpha.2
       sqlite3:
         specifier: ^5.1.7
         version: 5.1.7
       zod:
-        specifier: '3'
+        specifier: ^3.25.76
         version: 3.25.76
       zod-to-json-schema:
         specifier: ^3.24.6
@@ -707,8 +710,8 @@ packages:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
 
-  mcp-remote-oauth-client-provider@1.0.2:
-    resolution: {integrity: sha512-dj6pInF28PtHSEOyxGXTuQUfuLZsOFqv+jnAmnScxN3VW7/je1VhMuThZID9F0igdQ/phM9aN6mrLEN00k/Ljg==}
+  mcp-remote-oauth-client-provider@1.0.6:
+    resolution: {integrity: sha512-wiO02kF2AsJGKxNuc1k+bkcSbYlU4g42XFM6mHoVIEhgG20yLMf11bZZXMQqd3Cw09SeiPzdYn4rIfqGgVSaoA==}
 
   media-typer@0.3.0:
     resolution: {integrity: sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==}
@@ -1992,7 +1995,7 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mcp-remote-oauth-client-provider@1.0.2:
+  mcp-remote-oauth-client-provider@1.0.6:
     dependencies:
       '@modelcontextprotocol/sdk': 1.20.1
       axios: 1.12.2
