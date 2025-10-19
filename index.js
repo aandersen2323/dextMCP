@@ -156,21 +156,49 @@ async function initializeMCPClient() {
         const mcpServersConfig = {};
 
         for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
-            const serverConfigForClient = {
-                url: serverConfig.url
-            };
+            const serverConfigForClient = {};
 
-            // 添加认证提供者（所有配置了URL的服务器）
-            if (serverConfig.url && authProviders[serverName]) {
-                serverConfigForClient.authProvider = authProviders[serverName];
-            }
+            // 检查服务器类型：stdio 或 HTTP URL
+            if (serverConfig.command && serverConfig.args) {
+                // stdio类型的MCP服务器
+                serverConfigForClient.command = serverConfig.command;
+                serverConfigForClient.args = serverConfig.args;
 
-            // 添加自定义头部（如果配置了headers）
-            if (serverConfig.headers) {
-                serverConfigForClient.headers = {};
-                for (const [headerName, headerValue] of Object.entries(serverConfig.headers)) {
-                    serverConfigForClient.headers[headerName] = parseEnvVariable(headerValue);
+                // 可选的工作目录
+                if (serverConfig.cwd) {
+                    serverConfigForClient.cwd = parseEnvVariable(serverConfig.cwd);
                 }
+
+                // 可选的环境变量
+                if (serverConfig.env) {
+                    serverConfigForClient.env = {};
+                    for (const [envName, envValue] of Object.entries(serverConfig.env)) {
+                        serverConfigForClient.env[envName] = parseEnvVariable(envValue);
+                    }
+                }
+
+                console.log(`配置stdio服务器: ${serverName} (${serverConfig.command} ${serverConfig.args.join(' ')})`);
+            } else if (serverConfig.url) {
+                // HTTP URL类型的MCP服务器
+                serverConfigForClient.url = serverConfig.url;
+
+                // 添加认证提供者（所有配置了URL的服务器）
+                if (authProviders[serverName]) {
+                    serverConfigForClient.authProvider = authProviders[serverName];
+                }
+
+                // 添加自定义头部（如果配置了headers）
+                if (serverConfig.headers) {
+                    serverConfigForClient.headers = {};
+                    for (const [headerName, headerValue] of Object.entries(serverConfig.headers)) {
+                        serverConfigForClient.headers[headerName] = parseEnvVariable(headerValue);
+                    }
+                }
+
+                console.log(`配置HTTP服务器: ${serverName} (${serverConfig.url})`);
+            } else {
+                console.warn(`⚠️ 服务器 ${serverName} 配置无效：既没有command/args（stdio）也没有url（HTTP）`);
+                continue;
             }
 
             mcpServersConfig[serverName] = serverConfigForClient;
