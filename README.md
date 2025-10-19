@@ -13,6 +13,55 @@ Dext operates as an intelligent middleware layer:
 3. **Local MCP Server**: Express-based HTTP MCP server providing `retriever`, `executor`, and other tool capabilities
 4. **Intelligent Search Engine**: Runs vectorization and vector search self-checks when Embedding API is configured
 
+### Dext Workflow Diagram
+
+```mermaid
+graph TB
+    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:8789/mcp]
+
+    LocalMCP -->|Semantic Tool Search| VS[Vector Search Engine]
+    LocalMCP -->|Tool Execution Proxy| MCP[Multi-Server MCP Client]
+
+    VS -->|Convert Text to Vector| Embedding[Embedding API<br/>OpenAI Compatible]
+    Embedding -->|Return Query Vector| VS
+    VS -->|Vector Similarity Search| VDB[(Vector Database<br/>SQLite + sqlite-vec)]
+    VDB -->|Return Similar Tools| VS
+    VS -->|Return Ranked Results| LocalMCP
+
+    MCP -->|Establish Connection| Remote1[Remote MCP Server 1<br/>Feishu]
+    MCP -->|Establish Connection| Remote2[Remote MCP Server 2<br/>Context7]
+    MCP -->|Establish Connection| Remote3[Remote MCP Server N<br/>...]
+
+    Remote1 -->|Sync Tool Metadata| Indexer[Tool Indexer]
+    Remote2 -->|Sync Tool Metadata| Indexer
+    Remote3 -->|Sync Tool Metadata| Indexer
+    Indexer -->|Vectorize Tool Descriptions| Embedding
+    Embedding -->|Store Tool Vectors| VDB
+
+    VS -->|Record Search History| SessionDB[(Session History<br/>session_tool_history)]
+    SessionDB -->|Remove Duplicate Recommendations| VS
+
+    classDef user fill:#e1f5fe
+    classDef local fill:#f3e5f5
+    classDef vector fill:#e8f5e8
+    classDef remote fill:#fff3e0
+    classDef db fill:#fce4ec
+
+    class User user
+    class LocalMCP local
+    class VS,Embedding,Indexer vector
+    class Remote1,Remote2,Remote3 remote
+    class VDB,SessionDB db
+```
+
+### Key Workflow Steps
+
+1. **Query Processing**: User sends natural language queries to the local MCP server
+2. **Tool Retrieval**: The `retriever` tool vectorizes the query and searches for semantically similar tools
+3. **Tool Execution**: The `executor` tool proxies requests to appropriate remote MCP servers
+4. **Continuous Indexing**: Tool metadata from remote servers is automatically synchronized and vectorized
+5. **Session Management**: Search history is tracked to avoid duplicate tool recommendations
+
 > 💡 This project demonstrates advanced approaches to tool management in modern AI systems, combining semantic search, vector databases, and MCP protocol integration.
 
 ## Core Capabilities
@@ -45,7 +94,7 @@ Dext operates as an intelligent middleware layer:
 
 1. **Prerequisites**
    - Node.js ≥ 18 (ESM and `Float32Array` support)
-   - Optional: Doubao/Embedding API access credentials
+   - Optional: Embedding API access credentials
 
 2. **Install Dependencies**
 
@@ -59,9 +108,9 @@ Dext operates as an intelligent middleware layer:
 
    | Variable | Description | Default | Required |
    | -------- | ----------- | ------- | -------- |
-   | `EMBEDDING_API_KEY` | Doubao / OpenAI compatible Embedding API key | - | ✅ |
-   | `EMBEDDING_BASE_URL` | Embedding API Base URL | `https://ark.cn-beijing.volces.com/api/v3` | ❌ |
-   | `EMBEDDING_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
+   | `EMBEDDING_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
+   | `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
+   | `EMBEDDING_MODEL_NAME` | Embedding model name | - | ❌ |
    | `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
    | `MCP_SERVER_URL` | Remote MCP server (example: Feishu) endpoint | `http://localhost:8788/mcp` | ❌ |
    | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
@@ -71,7 +120,6 @@ Dext operates as an intelligent middleware layer:
 
    ### Supported Embedding APIs
 
-   - **Doubao API** (default): Doubao Embedding API, suitable for Chinese scenarios
    - **OpenAI Compatible API**: Any Embedding service compatible with OpenAI API format
    - **Auto Detection**: System automatically detects API type and adapts
 

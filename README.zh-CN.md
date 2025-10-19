@@ -13,6 +13,55 @@ Dext 作为一个智能中间层运行：
 3. **本地 MCP 服务端**：基于 Express 的 HTTP MCP 服务端，提供 `retriever`、`executor` 等工具能力
 4. **智能检索引擎**：在配置 Embedding API 后运行向量化与向量搜索的自检流程
 
+### Dext 工作流程图
+
+```mermaid
+graph TB
+    User[用户/应用程序] -->|自然语言查询| LocalMCP[本地 MCP 服务器<br/>localhost:8789/mcp]
+
+    LocalMCP -->|语义工具搜索| VS[向量搜索引擎]
+    LocalMCP -->|工具执行代理| MCP[多服务器 MCP 客户端]
+
+    VS -->|文本转换为向量| Embedding[嵌入 API<br/>OpenAI 兼容]
+    Embedding -->|返回查询向量| VS
+    VS -->|向量相似性搜索| VDB[(向量数据库<br/>SQLite + sqlite-vec)]
+    VDB -->|返回相似工具| VS
+    VS -->|返回排序结果| LocalMCP
+
+    MCP -->|建立连接| Remote1[远程 MCP 服务器 1<br/>飞书]
+    MCP -->|建立连接| Remote2[远程 MCP 服务器 2<br/>Context7]
+    MCP -->|建立连接| Remote3[远程 MCP 服务器 N<br/>...]
+
+    Remote1 -->|同步工具元数据| Indexer[工具索引器]
+    Remote2 -->|同步工具元数据| Indexer
+    Remote3 -->|同步工具元数据| Indexer
+    Indexer -->|向量化工具描述| Embedding
+    Embedding -->|存储工具向量| VDB
+
+    VS -->|记录搜索历史| SessionDB[(会话历史<br/>session_tool_history)]
+    SessionDB -->|移除重复推荐| VS
+
+    classDef user fill:#e1f5fe
+    classDef local fill:#f3e5f5
+    classDef vector fill:#e8f5e8
+    classDef remote fill:#fff3e0
+    classDef db fill:#fce4ec
+
+    class User user
+    class LocalMCP local
+    class VS,Embedding,Indexer vector
+    class Remote1,Remote2,Remote3 remote
+    class VDB,SessionDB db
+```
+
+### 关键工作流程步骤
+
+1. **查询处理**：用户向本地 MCP 服务器发送自然语言查询
+2. **工具检索**：`retriever` 工具将查询向量化并搜索语义相似的工具有
+3. **工具执行**：`executor` 工具将请求代理到适当的远程 MCP 服务器
+4. **持续索引**：远程服务器的工具元数据自动同步并向量化
+5. **会话管理**：跟踪搜索历史以避免重复工具推荐
+
 > 💡 本项目展示了现代 AI 系统中工具管理的先进方法，结合了语义搜索、向量数据库和 MCP 协议集成。
 
 ## 核心能力
@@ -45,7 +94,7 @@ Dext 作为一个智能中间层运行：
 
 1. **准备环境**
    - Node.js ≥ 18（ESM 与 `Float32Array` 支持）。
-   - 可选：准备好 Doubao/Embedding API 的访问凭证。
+   - 可选：准备好 Embedding API 的访问凭证。
 
 2. **安装依赖**
 
@@ -59,9 +108,9 @@ Dext 作为一个智能中间层运行：
 
    | 变量名 | 说明 | 默认值 | 必需 |
    | ------ | ---- | ------ | ---- |
-   | `EMBEDDING_API_KEY` | Doubao / OpenAI 兼容 Embedding API 密钥 | - | ✅ |
-   | `EMBEDDING_BASE_URL` | Embedding API Base URL | `https://ark.cn-beijing.volces.com/api/v3` | ❌ |
-   | `EMBEDDING_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
+   | `EMBEDDING_API_KEY` | OpenAI 兼容 Embedding API 密钥 | - | ✅ |
+   | `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
+   | `EMBEDDING_MODEL_NAME` | Embedding 模型名称 | - | ❌ |
    | `EMBEDDING_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
    | `MCP_SERVER_URL` | 远程 MCP 服务器（示例：飞书）入口 | `http://localhost:8788/mcp` | ❌ |
    | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
@@ -71,7 +120,6 @@ Dext 作为一个智能中间层运行：
 
    ### 支持的 Embedding API
 
-   - **Doubao API** (默认)：豆包 Embedding API，适合中文场景
    - **OpenAI 兼容 API**：任何兼容 OpenAI API 格式的 Embedding 服务
    - **自动检测**：系统会自动检测 API 类型并适配
 
