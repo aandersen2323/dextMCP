@@ -58,3 +58,4 @@ Thumbs.db
 *.temp
 
 tools_vector.db
+.claude/
