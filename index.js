@@ -207,7 +207,7 @@ async function initializeMCPClient() {
         const client = new MultiServerMCPClient({
             // Global tool configuration options
             // Whether to throw on errors if a tool fails to load (optional, default: true)
-            throwOnLoadError: true,
+            throwOnLoadError: false,
             // Whether to prefix tool names with the server name (optional, default: false)
             prefixToolNameWithServerName: true,
             // Optional additional prefix for tool names (optional, default: "")
