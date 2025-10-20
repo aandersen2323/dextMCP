@@ -131,10 +131,9 @@ async function initializeMCPClient() {
         }
 
         // 解析OAuth配置
-        const oauthConfig = mcpConfig.oauth || {};
-        const callbackPort = parseInt(parseEnvVariable(oauthConfig.callbackPort) || '12334');
-        const host = oauthConfig.host || 'localhost';
-        const clientName = oauthConfig.clientName || 'Dext';
+        const callbackPort = process.env.MCP_CALLBACK_PORT || '12334';
+        const host = 'localhost';
+        const clientName = 'Dext';
 
         // 创建OAuth认证提供者映射
         const authProviders = {};
