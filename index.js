@@ -223,7 +223,6 @@ async function initializeMCPClient() {
         const tools = await client.getTools();
         console.log('MCP客户端初始化成功!');
         console.log('可用工具:', tools.map(tool => tool.name));
-
         globalMCPClient = client;
         return client;
     } catch (error) {

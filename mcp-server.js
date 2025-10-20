@@ -443,6 +443,375 @@ app.get('/health', cors(corsOptions), (_req, res) => {
     });
 });
 
+// MCP Servers CRUD API
+
+// Input validation schemas
+const createMcpServerSchema = z.object({
+    server_name: z.string().min(1, '服务器名称不能为空'),
+    server_type: z.enum(['http', 'stdio'], { errorMap: () => ({ message: '服务器类型必须是 http 或 stdio' }) }),
+    url: z.string().url('URL格式不正确').optional().or(z.literal('')),
+    command: z.string().min(1, '命令不能为空').optional().or(z.literal('')),
+    args: z.array(z.string()).optional(),
+    headers: z.record(z.string()).optional(),
+    env: z.record(z.string()).optional(),
+    description: z.string().optional(),
+    enabled: z.boolean().optional()
+});
+
+const updateMcpServerSchema = z.object({
+    server_name: z.string().min(1, '服务器名称不能为空').optional(),
+    server_type: z.enum(['http', 'stdio']).optional(),
+    url: z.string().url('URL格式不正确').optional().or(z.literal('')),
+    command: z.string().min(1, '命令不能为空').optional().or(z.literal('')),
+    args: z.array(z.string()).optional(),
+    headers: z.record(z.string()).optional(),
+    env: z.record(z.string()).optional(),
+    description: z.string().optional(),
+    enabled: z.boolean().optional()
+});
+
+// Validation middleware
+const validateCreateMcpServer = (req, res, next) => {
+    try {
+        const validated = createMcpServerSchema.parse(req.body);
+        req.validatedBody = validated;
+
+        // Type-specific validation
+        if (validated.server_type === 'http' && !validated.url) {
+            return res.status(400).json({ error: 'HTTP类型的服务器必须提供URL' });
+        }
+        if (validated.server_type === 'stdio' && !validated.command) {
+            return res.status(400).json({ error: 'STDIO类型的服务器必须提供命令' });
+        }
+
+        next();
+    } catch (error) {
+        return res.status(400).json({
+            error: '输入验证失败',
+            details: error.errors?.map(e => e.message) || error.message
+        });
+    }
+};
+
+
+// Helper function to convert database row to API response
+function formatMcpServerRow(row) {
+    if (!row) return null;
+
+    return {
+        id: row.id,
+        server_name: row.server_name,
+        server_type: row.server_type,
+        url: row.url,
+        command: row.command,
+        args: row.args ? JSON.parse(row.args) : null,
+        headers: row.headers ? JSON.parse(row.headers) : null,
+        env: row.env ? JSON.parse(row.env) : null,
+        description: row.description,
+        enabled: Boolean(row.enabled),
+        created_at: row.created_at,
+        updated_at: row.updated_at
+    };
+}
+
+// GET /api/mcp-servers - 获取所有MCP服务器
+app.get('/api/mcp-servers', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { enabled, server_type, page = 1, limit = 50 } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        let whereClause = '';
+        const params = [];
+
+        if (enabled !== undefined) {
+            whereClause += ' WHERE enabled = ?';
+            params.push(enabled === 'true' ? 1 : 0);
+        }
+
+        if (server_type) {
+            whereClause += whereClause ? ' AND server_type = ?' : ' WHERE server_type = ?';
+            params.push(server_type);
+        }
+
+        // 获取总数
+        const countSql = `SELECT COUNT(*) as total FROM mcp_servers${whereClause}`;
+        const countResult = db.prepare(countSql).get(...params);
+        const total = countResult.total;
+
+        // 获取分页数据
+        const dataSql = `
+            SELECT * FROM mcp_servers${whereClause}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+        const dataParams = [...params, parseInt(limit), offset];
+        const rows = db.prepare(dataSql).all(...dataParams);
+
+        const servers = rows.map(formatMcpServerRow);
+
+        res.json({
+            data: servers,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('获取MCP服务器列表失败:', error);
+        res.status(500).json({ error: '获取服务器列表失败', details: error.message });
+    }
+});
+
+// GET /api/mcp-servers/:id - 根据ID获取MCP服务器
+app.get('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的服务器ID' });
+        }
+
+        const row = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
+
+        if (!row) {
+            return res.status(404).json({ error: '服务器不存在' });
+        }
+
+        const server = formatMcpServerRow(row);
+        res.json({ data: server });
+    } catch (error) {
+        console.error('获取MCP服务器失败:', error);
+        res.status(500).json({ error: '获取服务器失败', details: error.message });
+    }
+});
+
+// POST /api/mcp-servers - 创建MCP服务器
+app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const data = req.validatedBody;
+
+        // 检查服务器名称是否已存在
+        const existing = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ?').get(data.server_name);
+        if (existing) {
+            return res.status(409).json({ error: '服务器名称已存在' });
+        }
+
+        // 准备插入数据
+        const insertData = {
+            server_name: data.server_name,
+            server_type: data.server_type,
+            url: data.server_type === 'http' ? data.url || null : null,
+            command: data.server_type === 'stdio' ? data.command || null : null,
+            args: (data.args && data.args.length > 0) ? JSON.stringify(data.args) : null,
+            headers: (data.headers && Object.keys(data.headers).length > 0) ? JSON.stringify(data.headers) : null,
+            env: (data.env && Object.keys(data.env).length > 0) ? JSON.stringify(data.env) : null,
+            description: data.description || null,
+            enabled: data.enabled !== undefined ? (data.enabled ? 1 : 0) : 1
+        };
+
+        const stmt = db.prepare(`
+            INSERT INTO mcp_servers (server_name, server_type, url, command, args, headers, env, description, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const result = stmt.run(
+            insertData.server_name,
+            insertData.server_type,
+            insertData.url,
+            insertData.command,
+            insertData.args,
+            insertData.headers,
+            insertData.env,
+            insertData.description,
+            insertData.enabled
+        );
+
+        // 获取创建的服务器数据
+        const newRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(result.lastInsertRowid);
+        const server = formatMcpServerRow(newRow);
+
+        console.log(`✅ 创建MCP服务器: ${data.server_name} (ID: ${result.lastInsertRowid})`);
+
+        res.status(201).json({
+            message: '服务器创建成功',
+            data: server
+        });
+    } catch (error) {
+        console.error('创建MCP服务器失败:', error);
+        res.status(500).json({ error: '创建服务器失败', details: error.message });
+    }
+});
+
+// PUT /api/mcp-servers/:id - 更新MCP服务器
+app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的服务器ID' });
+        }
+
+        // 获取现有服务器数据
+        const existingRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
+        if (!existingRow) {
+            return res.status(404).json({ error: '服务器不存在' });
+        }
+
+        req.existingServer = existingRow;
+
+        // 验证输入数据
+        try {
+            const validated = updateMcpServerSchema.parse(req.body);
+            req.validatedBody = validated;
+
+            // Type-specific validation if both type and respective fields are provided
+            if (validated.server_type === 'http' && !validated.url && !req.existingServer?.url) {
+                return res.status(400).json({ error: 'HTTP类型的服务器必须提供URL' });
+            }
+            if (validated.server_type === 'stdio' && !validated.command && !req.existingServer?.command) {
+                return res.status(400).json({ error: 'STDIO类型的服务器必须提供命令' });
+            }
+        } catch (error) {
+            return res.status(400).json({
+                error: '输入验证失败',
+                details: error.errors?.map(e => e.message) || error.message
+            });
+        }
+
+        const data = req.validatedBody;
+
+        // 检查服务器名称是否已被其他服务器使用
+        if (data.server_name && data.server_name !== existingRow.server_name) {
+            const nameExists = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ? AND id != ?').get(data.server_name, parseInt(id));
+            if (nameExists) {
+                return res.status(409).json({ error: '服务器名称已存在' });
+            }
+        }
+
+        // 构建更新字段
+        const updateFields = [];
+        const updateValues = [];
+
+        if (data.server_name !== undefined) {
+            updateFields.push('server_name = ?');
+            updateValues.push(data.server_name);
+        }
+        if (data.server_type !== undefined) {
+            updateFields.push('server_type = ?');
+            updateValues.push(data.server_type);
+        }
+        if (data.url !== undefined) {
+            updateFields.push('url = ?');
+            updateValues.push(data.url || null);
+        }
+        if (data.command !== undefined) {
+            updateFields.push('command = ?');
+            updateValues.push(data.command || null);
+        }
+        if (data.args !== undefined) {
+            updateFields.push('args = ?');
+            updateValues.push((data.args && data.args.length > 0) ? JSON.stringify(data.args) : null);
+        }
+        if (data.headers !== undefined) {
+            updateFields.push('headers = ?');
+            updateValues.push((data.headers && Object.keys(data.headers).length > 0) ? JSON.stringify(data.headers) : null);
+        }
+        if (data.env !== undefined) {
+            updateFields.push('env = ?');
+            updateValues.push((data.env && Object.keys(data.env).length > 0) ? JSON.stringify(data.env) : null);
+        }
+        if (data.description !== undefined) {
+            updateFields.push('description = ?');
+            updateValues.push(data.description);
+        }
+        if (data.enabled !== undefined) {
+            updateFields.push('enabled = ?');
+            updateValues.push(data.enabled ? 1 : 0);
+        }
+
+        if (updateFields.length === 0) {
+            return res.status(400).json({ error: '没有提供要更新的字段' });
+        }
+
+        updateFields.push('updated_at = CURRENT_TIMESTAMP');
+        updateValues.push(parseInt(id));
+
+        const stmt = db.prepare(`UPDATE mcp_servers SET ${updateFields.join(', ')} WHERE id = ?`);
+        const result = stmt.run(...updateValues);
+
+        if (result.changes === 0) {
+            return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+        }
+
+        // 获取更新后的服务器数据
+        const updatedRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
+        const server = formatMcpServerRow(updatedRow);
+
+        console.log(`✅ 更新MCP服务器: ${server.server_name} (ID: ${id})`);
+
+        res.json({
+            message: '服务器更新成功',
+            data: server
+        });
+    } catch (error) {
+        console.error('更新MCP服务器失败:', error);
+        res.status(500).json({ error: '更新服务器失败', details: error.message });
+    }
+});
+
+// DELETE /api/mcp-servers/:id - 删除MCP服务器
+app.delete('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的服务器ID' });
+        }
+
+        // 检查服务器是否存在
+        const existingRow = db.prepare('SELECT server_name FROM mcp_servers WHERE id = ?').get(parseInt(id));
+        if (!existingRow) {
+            return res.status(404).json({ error: '服务器不存在' });
+        }
+
+        // 删除服务器
+        const stmt = db.prepare('DELETE FROM mcp_servers WHERE id = ?');
+        const result = stmt.run(parseInt(id));
+
+        if (result.changes === 0) {
+            return res.status(500).json({ error: '删除失败，可能没有数据被删除' });
+        }
+
+        console.log(`✅ 删除MCP服务器: ${existingRow.server_name} (ID: ${id})`);
+
+        res.json({
+            message: '服务器删除成功',
+            deleted_id: parseInt(id),
+            deleted_server_name: existingRow.server_name
+        });
+    } catch (error) {
+        console.error('删除MCP服务器失败:', error);
+        res.status(500).json({ error: '删除服务器失败', details: error.message });
+    }
+});
+
 app.post('/mcp', cors(corsOptions), async (req, res) => {
     // Create a new transport for each request to prevent request ID collisions
     const transport = new StreamableHTTPServerTransport({

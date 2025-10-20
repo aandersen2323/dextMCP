@@ -24,6 +24,22 @@ CREATE TABLE IF NOT EXISTS tool_mapping (
     FOREIGN KEY (tool_id) REFERENCES tool_vectors(id) ON DELETE CASCADE
 );
 
+-- MCP服务器配置表
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_name TEXT NOT NULL UNIQUE,              -- 服务器名称（唯一键）
+    server_type TEXT NOT NULL CHECK (server_type IN ('http', 'stdio')), -- 服务器类型
+    url TEXT,                                      -- HTTP服务器URL（仅http类型）
+    command TEXT,                                  -- 命令（仅stdio类型）
+    args TEXT,                                     -- 命令参数（JSON格式，仅stdio类型）
+    headers TEXT,                                  -- HTTP头部（JSON格式，仅http类型）
+    env TEXT,                                      -- 环境变量（JSON格式）
+    description TEXT,                              -- 服务器描述
+    enabled INTEGER DEFAULT 1 CHECK (enabled IN (0, 1)), -- 是否启用（0=禁用，1=启用）
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Session工具检索历史表
 CREATE TABLE IF NOT EXISTS session_tool_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,12 +55,15 @@ CREATE INDEX IF NOT EXISTS idx_tool_vectors_md5 ON tool_vectors(tool_md5);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_model ON tool_vectors(model_name);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_name ON tool_vectors(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tool_mapping_tool_id ON tool_mapping(tool_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(server_name);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_type ON mcp_servers(server_type);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
 CREATE INDEX IF NOT EXISTS idx_session_history_session_id ON session_tool_history(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_history_tool_md5 ON session_tool_history(tool_md5);
 
 -- 创建视图方便查询
 CREATE VIEW IF NOT EXISTS v_tool_search AS
-SELECT 
+SELECT
     tv.id,
     tv.tool_md5,
     tv.model_name,
@@ -53,3 +72,20 @@ SELECT
     tv.created_at,
     tv.updated_at
 FROM tool_vectors tv;
+
+-- MCP服务器配置视图
+CREATE VIEW IF NOT EXISTS v_mcp_servers AS
+SELECT
+    ms.id,
+    ms.server_name,
+    ms.server_type,
+    ms.url,
+    ms.command,
+    ms.args,
+    ms.headers,
+    ms.env,
+    ms.description,
+    ms.enabled,
+    ms.created_at,
+    ms.updated_at
+FROM mcp_servers ms;
