@@ -79,6 +79,7 @@ graph TB
 - **Local MCP Server**: Express-based HTTP MCP server providing `/mcp` endpoint and management APIs
 - **Tool Vector Indexing & Retrieval**: Vector search using `better-sqlite3` and `sqlite-vec`
 - **Session-Level History**: Search history tracking to avoid duplicate tool recommendations
+- **Group-Aware Routing**: Tag MCP servers into named groups, filter retrieval by group names, and manage group membership via API
 - **Migration Support**: Tools for migrating from legacy configuration files
 
 ## Project Structure
@@ -138,11 +139,11 @@ The system will:
 - Start the local MCP server at `http://localhost:3000/mcp`
 - Provide RESTful API at `http://localhost:3000/api/mcp-servers`
 
-## MCP Server Management API
+## MCP Server & Group Management API
 
 ### RESTful API Endpoints
 
-All MCP server configurations are managed through RESTful API:
+All MCP server configurations are managed through RESTful API (responses include a `group_names` array showing current memberships):
 
 #### Get All Servers
 ```bash
@@ -165,7 +166,8 @@ curl -X POST http://localhost:3000/api/mcp-servers \
     "server_type": "stdio",
     "command": "npx",
     "args": ["my-package"],
-    "description": "My custom MCP server"
+    "description": "My custom MCP server",
+    "group_names": ["devtools"]
   }'
 
 # HTTP Server
@@ -178,7 +180,8 @@ curl -X POST http://localhost:3000/api/mcp-servers \
     "headers": {
       "Authorization": "Bearer token"
     },
-    "description": "HTTP MCP server"
+    "description": "HTTP MCP server",
+    "group_names": ["docs", "devtools"]
   }'
 ```
 
@@ -188,13 +191,41 @@ curl -X PUT http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -d '{
     "description": "Updated description",
-    "enabled": false
+    "enabled": false,
+    "group_names": ["devtools"]
   }'
 ```
 
 #### Delete Server
 ```bash
 curl -X DELETE http://localhost:3000/api/mcp-servers/1
+```
+
+### Group Management
+
+Use the following endpoints to organize MCP servers into named groups:
+
+```bash
+# List all groups with server counts
+curl http://localhost:3000/api/mcp-groups
+
+# Create a new group
+curl -X POST http://localhost:3000/api/mcp-groups \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group_name": "devtools",
+    "description": "Developer tooling servers"
+  }'
+
+# Update a group
+curl -X PATCH http://localhost:3000/api/mcp-groups/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated description"
+  }'
+
+# Delete a group
+curl -X DELETE http://localhost:3000/api/mcp-groups/1
 ```
 
 ### Database Schema
@@ -218,6 +249,26 @@ CREATE TABLE mcp_servers (
 );
 ```
 
+Additional tables manage group metadata and relationships:
+
+```sql
+CREATE TABLE mcp_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mcp_server_groups (
+    server_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (server_id, group_id),
+    FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES mcp_groups(id) ON DELETE CASCADE
+);
+```
+
 ## MCP Tools API
 
 After startup, the local MCP server provides the following tools at `http://localhost:3000/mcp`:
@@ -230,7 +281,8 @@ Retrieve the most relevant tools based on natural language descriptions.
 const results = await client.call("retriever", {
   descriptions: ["I want to insert a timeline in a Feishu document"],
   sessionId: "abc123",  // 6-digit session ID, optional
-  serverNames: ["feishu"]  // Optional: filter by specific servers
+  serverNames: ["feishu"], // Optional: filter by specific servers
+  groupNames: ["devtools"] // Optional: filter by server groups
 });
 
 // Return format

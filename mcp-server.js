@@ -188,10 +188,11 @@ server.registerTool(
 创建时间轴内容
 在合适的位置插入时间轴块，你就一次性提出对两个工具的检索：获取飞书文档内容的工具、创建时间轴块的工具`),
             sessionId: z.string().describe("会话ID，6位字母数字组合"),
-            serverNames: z.array(z.string()).optional().describe("可选：指定服务器名称列表来限制检索范围，如 ['feishu', 'linear']")
+            serverNames: z.array(z.string()).optional().describe("可选：指定服务器名称列表来限制检索范围，如 ['feishu', 'linear']"),
+            groupNames: z.array(z.string()).optional().describe("可选：按分组名称过滤可用服务器，如 ['devtools']")
         },
     },
-    async ({ descriptions, sessionId, serverNames }) => {
+    async ({ descriptions, sessionId, serverNames, groupNames }) => {
         try {
             await ensureVectorSearchReady();
             await ensureVectorDatabaseReady();
@@ -243,7 +244,7 @@ server.registerTool(
                     description,
                     mcpClient,
                     modelName,
-                    { topK, threshold, includeDetails: true, serverNames }
+                    { topK, threshold, includeDetails: true, serverNames, groupNames }
                 );
 
                 const topResult = recommendations || [];
@@ -460,7 +461,8 @@ const createMcpServerSchema = z.object({
     headers: z.record(z.string()).optional(),
     env: z.record(z.string()).optional(),
     description: z.string().optional(),
-    enabled: z.boolean().optional()
+    enabled: z.boolean().optional(),
+    group_names: z.array(z.string().min(1, '分组名称不能为空')).optional()
 });
 
 const updateMcpServerSchema = z.object({
@@ -472,7 +474,18 @@ const updateMcpServerSchema = z.object({
     headers: z.record(z.string()).optional(),
     env: z.record(z.string()).optional(),
     description: z.string().optional(),
-    enabled: z.boolean().optional()
+    enabled: z.boolean().optional(),
+    group_names: z.array(z.string().min(1, '分组名称不能为空')).optional()
+});
+
+const createGroupSchema = z.object({
+    group_name: z.string().min(1, '分组名称不能为空'),
+    description: z.string().optional()
+});
+
+const updateGroupSchema = z.object({
+    group_name: z.string().min(1, '分组名称不能为空').optional(),
+    description: z.string().optional()
 });
 
 // Validation middleware
@@ -503,6 +516,15 @@ const validateCreateMcpServer = (req, res, next) => {
 function formatMcpServerRow(row) {
     if (!row) return null;
 
+    let groupNames = [];
+    try {
+        if (vectorDatabase?.db) {
+            groupNames = vectorDatabase.getGroupNamesForServer(row.id);
+        }
+    } catch (error) {
+        console.error('获取服务器分组信息失败:', error.message);
+    }
+
     return {
         id: row.id,
         server_name: row.server_name,
@@ -514,6 +536,20 @@ function formatMcpServerRow(row) {
         env: row.env ? JSON.parse(row.env) : null,
         description: row.description,
         enabled: Boolean(row.enabled),
+        group_names: groupNames,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+    };
+}
+
+function formatMcpGroupRow(row) {
+    if (!row) return null;
+
+    return {
+        id: row.id,
+        group_name: row.group_name,
+        description: row.description,
+        server_count: row.server_count ?? 0,
         created_at: row.created_at,
         updated_at: row.updated_at
     };
@@ -612,6 +648,26 @@ app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (
             return res.status(409).json({ error: '服务器名称已存在' });
         }
 
+        let groupIds = [];
+        if (data.group_names && data.group_names.length > 0) {
+            const uniqueGroupNames = Array.from(new Set(data.group_names.map(name => name.trim()).filter(Boolean)));
+
+            if (uniqueGroupNames.length === 0) {
+                return res.status(400).json({ error: '分组名称不能为空' });
+            }
+
+            const placeholders = uniqueGroupNames.map(() => '?').join(', ');
+            const rows = db.prepare(`SELECT id, group_name FROM mcp_groups WHERE group_name IN (${placeholders})`).all(...uniqueGroupNames);
+            const foundNames = rows.map(row => row.group_name);
+            const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
+
+            if (missing.length > 0) {
+                return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+            }
+
+            groupIds = rows.map(row => row.id);
+        }
+
         // 准备插入数据
         const insertData = {
             server_name: data.server_name,
@@ -642,11 +698,21 @@ app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (
             insertData.enabled
         );
 
+        const newServerId = result.lastInsertRowid;
+
+        if (groupIds.length > 0) {
+            const insertGroupStmt = db.prepare('INSERT INTO mcp_server_groups (server_id, group_id) VALUES (?, ?)');
+            const insertMany = db.transaction((ids) => {
+                ids.forEach(groupId => insertGroupStmt.run(newServerId, groupId));
+            });
+            insertMany(groupIds);
+        }
+
         // 获取创建的服务器数据
-        const newRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(result.lastInsertRowid);
+        const newRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(newServerId);
         const server = formatMcpServerRow(newRow);
 
-        console.log(`✅ 创建MCP服务器: ${data.server_name} (ID: ${result.lastInsertRowid})`);
+        console.log(`✅ 创建MCP服务器: ${data.server_name} (ID: ${newServerId})`);
 
         res.status(201).json({
             message: '服务器创建成功',
@@ -699,6 +765,30 @@ app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
 
         const data = req.validatedBody;
 
+        let updatedGroupIds = null;
+        if (data.group_names !== undefined) {
+            const originalLength = data.group_names.length;
+            const uniqueGroupNames = Array.from(new Set(data.group_names.map(name => name.trim()).filter(Boolean)));
+
+            if (uniqueGroupNames.length === 0) {
+                if (originalLength > 0) {
+                    return res.status(400).json({ error: '分组名称不能为空' });
+                }
+                updatedGroupIds = [];
+            } else {
+                const placeholders = uniqueGroupNames.map(() => '?').join(', ');
+                const rows = db.prepare(`SELECT id, group_name FROM mcp_groups WHERE group_name IN (${placeholders})`).all(...uniqueGroupNames);
+                const foundNames = rows.map(row => row.group_name);
+                const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
+
+                if (missing.length > 0) {
+                    return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+                }
+
+                updatedGroupIds = rows.map(row => row.id);
+            }
+        }
+
         // 检查服务器名称是否已被其他服务器使用
         if (data.server_name && data.server_name !== existingRow.server_name) {
             const nameExists = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ? AND id != ?').get(data.server_name, parseInt(id));
@@ -748,18 +838,36 @@ app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
             updateValues.push(data.enabled ? 1 : 0);
         }
 
-        if (updateFields.length === 0) {
+        if (updateFields.length === 0 && updatedGroupIds === null) {
             return res.status(400).json({ error: '没有提供要更新的字段' });
         }
 
-        updateFields.push('updated_at = CURRENT_TIMESTAMP');
-        updateValues.push(parseInt(id));
+        if (updateFields.length > 0) {
+            updateFields.push('updated_at = CURRENT_TIMESTAMP');
+            updateValues.push(parseInt(id));
 
-        const stmt = db.prepare(`UPDATE mcp_servers SET ${updateFields.join(', ')} WHERE id = ?`);
-        const result = stmt.run(...updateValues);
+            const stmt = db.prepare(`UPDATE mcp_servers SET ${updateFields.join(', ')} WHERE id = ?`);
+            const result = stmt.run(...updateValues);
 
-        if (result.changes === 0) {
-            return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+            if (result.changes === 0) {
+                return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+            }
+        }
+
+        if (updatedGroupIds !== null) {
+            const deleteStmt = db.prepare('DELETE FROM mcp_server_groups WHERE server_id = ?');
+            deleteStmt.run(parseInt(id));
+
+            if (updatedGroupIds.length > 0) {
+                const insertStmt = db.prepare('INSERT INTO mcp_server_groups (server_id, group_id) VALUES (?, ?)');
+                const insertMany = db.transaction((ids) => {
+                    ids.forEach(groupId => insertStmt.run(parseInt(id), groupId));
+                });
+                insertMany(updatedGroupIds);
+            }
+
+            // 更新服务器更新时间戳
+            db.prepare('UPDATE mcp_servers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(parseInt(id));
         }
 
         // 获取更新后的服务器数据
@@ -814,6 +922,211 @@ app.delete('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
     } catch (error) {
         console.error('删除MCP服务器失败:', error);
         res.status(500).json({ error: '删除服务器失败', details: error.message });
+    }
+});
+
+// GET /api/mcp-groups - 获取所有分组
+app.get('/api/mcp-groups', cors(corsOptions), async (_req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const rows = db.prepare(`
+            SELECT g.id, g.group_name, g.description, g.created_at, g.updated_at,
+                   COUNT(msg.server_id) AS server_count
+            FROM mcp_groups g
+            LEFT JOIN mcp_server_groups msg ON g.id = msg.group_id
+            GROUP BY g.id
+            ORDER BY g.group_name
+        `).all();
+
+        res.json({ data: rows.map(formatMcpGroupRow) });
+    } catch (error) {
+        console.error('获取分组列表失败:', error);
+        res.status(500).json({ error: '获取分组列表失败', details: error.message });
+    }
+});
+
+// GET /api/mcp-groups/:id - 获取分组详情
+app.get('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的分组ID' });
+        }
+
+        const row = db.prepare(`
+            SELECT g.id, g.group_name, g.description, g.created_at, g.updated_at,
+                   (SELECT COUNT(*) FROM mcp_server_groups msg WHERE msg.group_id = g.id) AS server_count
+            FROM mcp_groups g
+            WHERE g.id = ?
+        `).get(parseInt(id));
+
+        if (!row) {
+            return res.status(404).json({ error: '分组不存在' });
+        }
+
+        res.json({ data: formatMcpGroupRow(row) });
+    } catch (error) {
+        console.error('获取分组失败:', error);
+        res.status(500).json({ error: '获取分组失败', details: error.message });
+    }
+});
+
+// POST /api/mcp-groups - 创建分组
+app.post('/api/mcp-groups', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const validated = createGroupSchema.parse(req.body);
+        const groupName = validated.group_name.trim();
+
+        if (!groupName) {
+            return res.status(400).json({ error: '分组名称不能为空' });
+        }
+
+        const existing = db.prepare('SELECT id FROM mcp_groups WHERE group_name = ?').get(groupName);
+        if (existing) {
+            return res.status(409).json({ error: '分组名称已存在' });
+        }
+
+        const description = validated.description?.trim() || null;
+        const stmt = db.prepare('INSERT INTO mcp_groups (group_name, description) VALUES (?, ?)');
+        const result = stmt.run(groupName, description);
+
+        const row = db.prepare(`
+            SELECT g.id, g.group_name, g.description, g.created_at, g.updated_at,
+                   0 AS server_count
+            FROM mcp_groups g
+            WHERE g.id = ?
+        `).get(result.lastInsertRowid);
+
+        console.log(`✅ 创建分组: ${groupName} (ID: ${result.lastInsertRowid})`);
+
+        res.status(201).json({
+            message: '分组创建成功',
+            data: formatMcpGroupRow(row)
+        });
+    } catch (error) {
+        console.error('创建分组失败:', error);
+        if (error.errors) {
+            return res.status(400).json({
+                error: '输入验证失败',
+                details: error.errors.map(e => e.message)
+            });
+        }
+        res.status(500).json({ error: '创建分组失败', details: error.message });
+    }
+});
+
+// PATCH /api/mcp-groups/:id - 更新分组
+app.patch('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的分组ID' });
+        }
+
+        const existing = db.prepare('SELECT * FROM mcp_groups WHERE id = ?').get(parseInt(id));
+        if (!existing) {
+            return res.status(404).json({ error: '分组不存在' });
+        }
+
+        const validated = updateGroupSchema.parse(req.body);
+
+        const updateFields = [];
+        const updateValues = [];
+
+        if (validated.group_name !== undefined) {
+            const trimmedName = validated.group_name.trim();
+            if (!trimmedName) {
+                return res.status(400).json({ error: '分组名称不能为空' });
+            }
+
+            const nameExists = db.prepare('SELECT id FROM mcp_groups WHERE group_name = ? AND id != ?').get(trimmedName, parseInt(id));
+            if (nameExists) {
+                return res.status(409).json({ error: '分组名称已存在' });
+            }
+
+            updateFields.push('group_name = ?');
+            updateValues.push(trimmedName);
+        }
+
+        if (validated.description !== undefined) {
+            updateFields.push('description = ?');
+            updateValues.push(validated.description?.trim() || null);
+        }
+
+        if (updateFields.length === 0) {
+            return res.status(400).json({ error: '没有提供要更新的字段' });
+        }
+
+        updateFields.push('updated_at = CURRENT_TIMESTAMP');
+        updateValues.push(parseInt(id));
+
+        const stmt = db.prepare(`UPDATE mcp_groups SET ${updateFields.join(', ')} WHERE id = ?`);
+        const result = stmt.run(...updateValues);
+
+        if (result.changes === 0) {
+            return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+        }
+
+        const row = db.prepare(`
+            SELECT g.id, g.group_name, g.description, g.created_at, g.updated_at,
+                   (SELECT COUNT(*) FROM mcp_server_groups msg WHERE msg.group_id = g.id) AS server_count
+            FROM mcp_groups g
+            WHERE g.id = ?
+        `).get(parseInt(id));
+
+        console.log(`✅ 更新分组: ${row.group_name} (ID: ${id})`);
+
+        res.json({
+            message: '分组更新成功',
+            data: formatMcpGroupRow(row)
+        });
+    } catch (error) {
+        console.error('更新分组失败:', error);
+        if (error.errors) {
+            return res.status(400).json({
+                error: '输入验证失败',
+                details: error.errors.map(e => e.message)
+            });
+        }
+        res.status(500).json({ error: '更新分组失败', details: error.message });
+    }
+});
+
+// DELETE /api/mcp-groups/:id - 删除分组
+app.delete('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+        if (!id || isNaN(parseInt(id))) {
+            return res.status(400).json({ error: '无效的分组ID' });
+        }
+
+        const existing = db.prepare('SELECT group_name FROM mcp_groups WHERE id = ?').get(parseInt(id));
+        if (!existing) {
+            return res.status(404).json({ error: '分组不存在' });
+        }
+
+        db.prepare('DELETE FROM mcp_groups WHERE id = ?').run(parseInt(id));
+
+        console.log(`🗑️  删除分组: ${existing.group_name} (ID: ${id})`);
+
+        res.json({ message: '分组删除成功' });
+    } catch (error) {
+        console.error('删除分组失败:', error);
+        res.status(500).json({ error: '删除分组失败', details: error.message });
     }
 });
 

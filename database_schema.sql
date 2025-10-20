@@ -89,3 +89,26 @@ SELECT
     ms.created_at,
     ms.updated_at
 FROM mcp_servers ms;
+
+-- MCP服务器分组表
+CREATE TABLE IF NOT EXISTS mcp_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name TEXT NOT NULL UNIQUE,             -- 分组名称（唯一）
+    description TEXT,                            -- 分组描述
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- MCP服务器与分组关联表（支持一台服务器属于多个分组）
+CREATE TABLE IF NOT EXISTS mcp_server_groups (
+    server_id INTEGER NOT NULL,                  -- MCP服务器ID
+    group_id INTEGER NOT NULL,                   -- 分组ID
+    PRIMARY KEY (server_id, group_id),
+    FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES mcp_groups(id) ON DELETE CASCADE
+);
+
+-- 分组索引
+CREATE INDEX IF NOT EXISTS idx_mcp_groups_name ON mcp_groups(group_name);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_group ON mcp_server_groups(group_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_server ON mcp_server_groups(server_id);

@@ -144,17 +144,41 @@ class VectorSearch {
                 topK = 5,
                 threshold = 0.1,
                 includeDetails = true,
-                serverNames = null
+                serverNames = null,
+                groupNames = null
             } = options;
 
             console.log(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
             console.log(`📝 查询: "${query}"`);
             console.log(`🔧 模型: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
-            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}`);
+            const groupInfo = groupNames && groupNames.length > 0 ? `, 分组过滤: ${groupNames.join(', ')}` : '';
+            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
+
+            let effectiveServerNames = serverNames;
+
+            if (groupNames && groupNames.length > 0) {
+                const groupServerNames = this.db.getServerNamesForGroups(groupNames);
+
+                if (groupServerNames.length === 0) {
+                    console.log('⚠️  指定分组没有匹配的服务器，返回空结果');
+                    return [];
+                }
+
+                if (effectiveServerNames && effectiveServerNames.length > 0) {
+                    effectiveServerNames = effectiveServerNames.filter(name => groupServerNames.includes(name));
+
+                    if (effectiveServerNames.length === 0) {
+                        console.log('⚠️  分组过滤与服务器过滤没有交集，返回空结果');
+                        return [];
+                    }
+                } else {
+                    effectiveServerNames = groupServerNames;
+                }
+            }
 
             // 1. 搜索相似工具
-            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, serverNames);
+            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, effectiveServerNames);
 
             if (similarTools.length === 0) {
                 console.log('⚠️  未找到相似的工具');
