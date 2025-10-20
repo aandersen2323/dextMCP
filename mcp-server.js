@@ -7,16 +7,10 @@ import VectorSearch from './vector_search.js';
 import VectorDatabase from './database.js';
 import { initializeMCPClient, getMCPClient } from './index.js';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 
-// 从配置文件读取服务器信息并生成增强描述
+// 从数据库读取服务器信息并生成增强描述
 async function getEnhancedServerDescription() {
     try {
-        const configPath = path.join(process.cwd(), 'mcp-servers.json');
-        const configData = fs.readFileSync(configPath, 'utf8');
-        const mcpConfig = JSON.parse(configData);
-
         const serverDescriptions = [];
 
         // 确保 MCP 客户端已准备就绪
@@ -38,34 +32,45 @@ async function getEnhancedServerDescription() {
                 toolsByServer[serverName].push(toolName);
             });
 
-            if (mcpConfig.servers) {
-                for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
-                    let description = serverName;
+            // 从数据库获取服务器配置
+            await ensureVectorDatabaseReady();
+            const db = vectorDatabase.db;
+            const stmt = db.prepare('SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY server_name');
+            const mcpServers = stmt.all();
 
-                    if (serverConfig.description) {
-                        description += `(${serverConfig.description})`;
-                    }
+            for (const serverRow of mcpServers) {
+                let description = serverRow.server_name;
 
-                    // 添加工具名称列表
-                    const serverTools = toolsByServer[serverName];
-                    if (serverTools && serverTools.length > 0) {
-                        description += ` - 工具: ${serverTools.join(', ')}`;
-                    }
-
-                    serverDescriptions.push(description);
+                if (serverRow.description) {
+                    description += `(${serverRow.description})`;
                 }
+
+                // 添加工具名称列表
+                const serverTools = toolsByServer[serverRow.server_name];
+                if (serverTools && serverTools.length > 0) {
+                    description += ` - 工具: ${serverTools.join(', ')}`;
+                }
+
+                serverDescriptions.push(description);
             }
         } catch (error) {
             console.error('获取MCP工具信息失败:', error.message);
             // 如果获取工具信息失败，仍然返回基本的服务器描述
-            if (mcpConfig.servers) {
-                for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
-                    if (serverConfig.description) {
-                        serverDescriptions.push(`${serverName}(${serverConfig.description})`);
+            try {
+                await ensureVectorDatabaseReady();
+                const db = vectorDatabase.db;
+                const stmt = db.prepare('SELECT server_name, description FROM mcp_servers WHERE enabled = 1 ORDER BY server_name');
+                const mcpServers = stmt.all();
+
+                for (const serverRow of mcpServers) {
+                    if (serverRow.description) {
+                        serverDescriptions.push(`${serverRow.server_name}(${serverRow.description})`);
                     } else {
-                        serverDescriptions.push(serverName);
+                        serverDescriptions.push(serverRow.server_name);
                     }
                 }
+            } catch (dbError) {
+                console.error('从数据库读取服务器配置失败:', dbError.message);
             }
         }
 
@@ -75,7 +80,7 @@ async function getEnhancedServerDescription() {
 
         return '';
     } catch (error) {
-        console.error('读取MCP配置文件失败:', error.message);
+        console.error('获取增强服务器描述失败:', error.message);
         return '';
     }
 }

@@ -105,7 +105,7 @@ function parseEnvVariable(value) {
     }
 
     // 递归替换字符串中的所有环境变量占位符
-    const replaced = value.replace(/\$\{([^:}]+)(?::([^}]*))?\}/g, (match, variableName, defaultValue) => {
+    const replaced = value.replace(/\$\{([^:}]+)(?::([^}]*))?\}/g, (_match, variableName, defaultValue) => {
         const envValue = process.env[variableName];
         return envValue !== undefined ? envValue : (defaultValue || '');
     });
@@ -116,18 +116,21 @@ function parseEnvVariable(value) {
 // MCP客户端配置和初始化
 async function initializeMCPClient() {
     try {
-        // 读取MCP服务器配置文件
-        const fs = await import('fs');
-        const path = await import('path');
+        // 从数据库读取MCP服务器配置
+        const VectorDatabase = (await import('./database.js')).default;
+        const vectorDatabase = new VectorDatabase();
+        await vectorDatabase.initialize();
 
-        let mcpConfig;
+        let mcpServers;
         try {
-            const configPath = path.join(process.cwd(), 'mcp-servers.json');
-            const configData = fs.readFileSync(configPath, 'utf8');
-            mcpConfig = JSON.parse(configData);
+            const stmt = vectorDatabase.db.prepare('SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY server_name');
+            mcpServers = stmt.all();
+            console.log(`从数据库加载了 ${mcpServers.length} 个启用的MCP服务器`);
         } catch (error) {
-            console.error('读取MCP配置文件失败:', error.message);
+            console.error('从数据库读取MCP服务器配置失败:', error.message);
             return null;
+        } finally {
+            vectorDatabase.close();
         }
 
         // 解析OAuth配置
@@ -139,68 +142,82 @@ async function initializeMCPClient() {
         const authProviders = {};
 
         // 为所有配置了URL的服务器创建AuthProvider
-        for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
-            if (serverConfig.url) {
-                authProviders[serverName] = OAuthClientProvider.createWithAutoAuth({
-                    serverUrl: serverConfig.url,
+        for (const serverRow of mcpServers) {
+            if (serverRow.url) {
+                authProviders[serverRow.server_name] = OAuthClientProvider.createWithAutoAuth({
+                    serverUrl: serverRow.url,
                     callbackPort,
                     host,
                     clientName,
                 });
-                console.log(`为 ${serverName} 创建了OAuth认证提供者`);
+                console.log(`为 ${serverRow.server_name} 创建了OAuth认证提供者`);
             }
         }
 
         // 构建MCP服务器配置
         const mcpServersConfig = {};
 
-        for (const [serverName, serverConfig] of Object.entries(mcpConfig.servers)) {
+        for (const serverRow of mcpServers) {
             const serverConfigForClient = {};
 
             // 检查服务器类型：stdio 或 HTTP URL
-            if (serverConfig.command && serverConfig.args) {
+            if (serverRow.server_type === 'stdio' && serverRow.command) {
                 // stdio类型的MCP服务器
-                serverConfigForClient.command = serverConfig.command;
-                serverConfigForClient.args = serverConfig.args;
+                serverConfigForClient.command = serverRow.command;
 
-                // 可选的工作目录
-                if (serverConfig.cwd) {
-                    serverConfigForClient.cwd = parseEnvVariable(serverConfig.cwd);
+                // 解析args JSON
+                if (serverRow.args) {
+                    try {
+                        serverConfigForClient.args = JSON.parse(serverRow.args);
+                    } catch (error) {
+                        console.error(`解析 ${serverRow.server_name} 的args失败:`, error.message);
+                        continue;
+                    }
                 }
 
                 // 可选的环境变量
-                if (serverConfig.env) {
-                    serverConfigForClient.env = {};
-                    for (const [envName, envValue] of Object.entries(serverConfig.env)) {
-                        serverConfigForClient.env[envName] = parseEnvVariable(envValue);
+                if (serverRow.env) {
+                    try {
+                        const envVars = JSON.parse(serverRow.env);
+                        serverConfigForClient.env = {};
+                        for (const [envName, envValue] of Object.entries(envVars)) {
+                            serverConfigForClient.env[envName] = parseEnvVariable(envValue);
+                        }
+                    } catch (error) {
+                        console.error(`解析 ${serverRow.server_name} 的env失败:`, error.message);
                     }
                 }
 
-                console.log(`配置stdio服务器: ${serverName} (${serverConfig.command} ${serverConfig.args.join(' ')})`);
-            } else if (serverConfig.url) {
+                console.log(`配置stdio服务器: ${serverRow.server_name} (${serverRow.command} ${serverConfigForClient.args?.join(' ') || ''})`);
+            } else if (serverRow.server_type === 'http' && serverRow.url) {
                 // HTTP URL类型的MCP服务器
-                serverConfigForClient.url = serverConfig.url;
+                serverConfigForClient.url = serverRow.url;
 
                 // 添加认证提供者（所有配置了URL的服务器）
-                if (authProviders[serverName]) {
-                    serverConfigForClient.authProvider = authProviders[serverName];
+                if (authProviders[serverRow.server_name]) {
+                    serverConfigForClient.authProvider = authProviders[serverRow.server_name];
                 }
 
                 // 添加自定义头部（如果配置了headers）
-                if (serverConfig.headers) {
-                    serverConfigForClient.headers = {};
-                    for (const [headerName, headerValue] of Object.entries(serverConfig.headers)) {
-                        serverConfigForClient.headers[headerName] = parseEnvVariable(headerValue);
+                if (serverRow.headers) {
+                    try {
+                        const headers = JSON.parse(serverRow.headers);
+                        serverConfigForClient.headers = {};
+                        for (const [headerName, headerValue] of Object.entries(headers)) {
+                            serverConfigForClient.headers[headerName] = parseEnvVariable(headerValue);
+                        }
+                    } catch (error) {
+                        console.error(`解析 ${serverRow.server_name} 的headers失败:`, error.message);
                     }
                 }
 
-                console.log(`配置HTTP服务器: ${serverName} (${serverConfig.url})`);
+                console.log(`配置HTTP服务器: ${serverRow.server_name} (${serverRow.url})`);
             } else {
-                console.warn(`⚠️ 服务器 ${serverName} 配置无效：既没有command/args（stdio）也没有url（HTTP）`);
+                console.warn(`⚠️ 服务器 ${serverRow.server_name} 配置无效：既没有command（stdio）也没有url（HTTP）`);
                 continue;
             }
 
-            mcpServersConfig[serverName] = serverConfigForClient;
+            mcpServersConfig[serverRow.server_name] = serverConfigForClient;
         }
 
         // Create client and connect to server
