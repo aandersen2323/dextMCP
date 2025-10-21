@@ -1,12 +1,12 @@
-# MCP服务器配置管理说明
+# MCP Server Configuration Management Guide
 
-## 概述
+## Overview
 
-本项目使用数据库存储MCP服务器配置，提供完整的RESTful API进行配置管理。这提供了动态配置能力、数据持久化和更好的管理体验。
+This project stores MCP server configuration in a SQLite database and exposes a full RESTful API for managing the records. The API provides dynamic configuration capabilities, persistent storage, and an improved operational experience compared with static JSON files.
 
-## 配置存储
+## Configuration Storage
 
-MCP服务器配置存储在SQLite数据库的 `mcp_servers` 表中：
+MCP server definitions live in the `mcp_servers` table:
 
 ```sql
 CREATE TABLE mcp_servers (
@@ -15,9 +15,9 @@ CREATE TABLE mcp_servers (
     server_type TEXT NOT NULL CHECK (server_type IN ('http', 'stdio')),
     url TEXT,
     command TEXT,
-    args TEXT,  -- JSON格式
-    headers TEXT, -- JSON格式
-    env TEXT, -- JSON格式
+    args TEXT,      -- JSON encoded array
+    headers TEXT,   -- JSON encoded object
+    env TEXT,       -- JSON encoded object
     description TEXT,
     enabled INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -25,121 +25,44 @@ CREATE TABLE mcp_servers (
 );
 ```
 
+Additional tables track grouping, session history, and vector metadata, but most migrations only need to modify the `mcp_servers` rows.
+
 ## RESTful API
 
-提供完整的MCP服务器管理API：
+The admin API exposes complete CRUD coverage for MCP servers:
 
-- `GET /api/mcp-servers` - 获取服务器列表
-- `POST /api/mcp-servers` - 创建新服务器
-- `GET /api/mcp-servers/:id` - 获取特定服务器
-- `PATCH /api/mcp-servers/:id` - 更新服务器
-- `DELETE /api/mcp-servers/:id` - 删除服务器
+- `GET /api/mcp-servers` – List servers
+- `POST /api/mcp-servers` – Create a new server
+- `GET /api/mcp-servers/:id` – Fetch a single server
+- `PATCH /api/mcp-servers/:id` – Update server details
+- `DELETE /api/mcp-servers/:id` – Remove a server
 
-## 旧配置文件迁移 (已弃用)
+Use the `x-api-key` header with your admin API key when calling these endpoints.
 
-如果需要从旧的 `mcp-servers.json` 文件迁移配置：
+## Migrating from `mcp-servers.json` (Deprecated)
 
-```bash
-# 注意：此功能仅用于迁移旧配置，新项目请直接使用API
-node migrate-mcp-servers.js
-```
+If you previously managed servers with the legacy JSON file, follow the steps below to migrate the definitions into the database:
 
-迁移脚本会：
-1. 读取旧的配置文件（如果存在）
-2. 将配置迁移到数据库
-3. 创建配置文件备份
-4. 跳过已存在的服务器配置
+1. **Export the existing JSON**
+   ```bash
+   cp ~/.config/claude/mcp-servers.json ./mcp-servers.json
+   ```
+2. **Review the structure** – Each entry should include a unique `server_name`, the `server_type` (`http` or `stdio`), and the connection details (`url` for HTTP servers, or `command`/`args` for STDIO servers).
+3. **Create the database entries** – Use the admin API to create matching rows. You can script this process; the example below shows the shape of the payload for HTTP servers:
+   ```bash
+   curl -X POST http://localhost:3398/api/mcp-servers \
+     -H "Content-Type: application/json" \
+     -H "x-api-key: YOUR_ADMIN_KEY" \
+     -d '{
+       "server_name": "github",
+       "server_type": "http",
+       "url": "http://127.0.0.1:56181",
+       "description": "GitHub MCP proxy",
+       "enabled": true
+     }'
+   ```
+   For STDIO servers, supply `command` and `args` instead of `url`.
+4. **Verify the migration** – Call `GET /api/mcp-servers` to confirm that each server is stored correctly, and restart the Dext service if it was running during the import.
 
-## API 使用示例
+Once the database contains the desired entries, you can remove the deprecated JSON file to avoid confusion. Future configuration changes should be made through the REST API or any tooling that uses it.
 
-### 获取所有启用的服务器
-```bash
-curl http://localhost:3398/api/mcp-servers?enabled=true
-```
-
-### 创建新的STDIO服务器
-```bash
-curl -X POST http://localhost:3398/api/mcp-servers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "server_name": "my-server",
-    "server_type": "stdio",
-    "command": "npx",
-    "args": ["my-package"],
-    "description": "我的MCP服务器"
-  }'
-```
-
-### 创建新的HTTP服务器
-```bash
-curl -X POST http://localhost:3398/api/mcp-servers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "server_name": "my-http-server",
-    "server_type": "http",
-    "url": "https://example.com/mcp",
-    "headers": {
-      "Authorization": "Bearer token"
-    },
-    "description": "HTTP MCP服务器"
-  }'
-```
-
-### 更新服务器配置
-```bash
-curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "description": "更新后的描述",
-    "enabled": false
-  }'
-```
-
-### 删除服务器
-```bash
-curl -X DELETE http://localhost:3398/api/mcp-servers/1
-```
-
-## 优势
-
-1. **动态配置**: 可以在运行时通过API修改服务器配置，无需重启应用
-2. **数据持久化**: 使用SQLite数据库，支持更复杂的查询和管理
-3. **RESTful API**: 提供完整的管理接口，便于集成到其他系统
-4. **配置验证**: 支持数据验证和错误处理
-5. **版本控制**: 数据库包含创建和更新时间，便于追踪变更
-
-## 注意事项
-
-1. **数据库文件**: 配置存储在 `tools_vector.db` 文件中
-2. **权限管理**: 生产环境建议对API接口添加适当的权限控制
-3. **备份**: 建议定期备份数据库文件
-4. **配置文件**: 不再使用 `mcp-servers.json` 文件，所有配置通过数据库管理
-
-## 故障排除
-
-### 问题：MCP客户端初始化失败
-- 检查数据库文件是否存在且有正确权限
-- 确认数据库中有启用的MCP服务器配置
-- 查看应用日志中的错误信息
-- 使用API检查服务器状态：`GET /api/mcp-servers?enabled=true`
-
-### 问题：服务器无法连接
-- 确认服务器配置正确（URL、命令、参数等）
-- 检查网络连接和防火墙设置
-- 验证服务器类型是否正确（http/stdio）
-- 使用API更新服务器配置：`PATCH /api/mcp-servers/:id`
-
-### 问题：API接口无法访问
-- 确认MCP服务器已启动
-- 检查端口配置（默认3398）
-- 验证CORS设置
-- 测试健康检查端点：`GET /health`
-
-### 问题：如何查看当前配置的服务器
-```bash
-# 获取所有启用的服务器
-curl http://localhost:3398/api/mcp-servers?enabled=true
-
-# 直接查询数据库
-sqlite3 tools_vector.db "SELECT server_name, server_type, url, command FROM mcp_servers WHERE enabled = 1;"
-```
