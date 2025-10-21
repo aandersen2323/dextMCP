@@ -1,7 +1,5 @@
 # Dext - Advanced MCP Tool Retrieval & Vector Indexing System
 
-[中文文档](README.zh-CN.md) | English
-
 **Dext** is an advanced MCP (Model Context Protocol) tool retrieval and vector indexing system that enables intelligent tool discovery and execution through semantic search. It features a database-driven configuration management system with RESTful API for dynamic MCP server management.
 
 ## System Architecture Overview
@@ -18,7 +16,7 @@ Dext operates as an intelligent middleware layer:
 
 ```mermaid
 graph TB
-    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:3000/mcp]
+    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:3398/mcp]
     User -->|API Management| API[RESTful API<br/>/api/mcp-servers]
 
     LocalMCP -->|Semantic Tool Search| VS[Vector Search Engine]
@@ -79,12 +77,18 @@ graph TB
 - **Local MCP Server**: Express-based HTTP MCP server providing `/mcp` endpoint and management APIs
 - **Tool Vector Indexing & Retrieval**: Vector search using `better-sqlite3` and `sqlite-vec`
 - **Session-Level History**: Search history tracking to avoid duplicate tool recommendations
+- **Group-Aware Routing**: Tag MCP servers into named groups, filter retrieval by group names, and manage group membership via API
 - **Migration Support**: Tools for migrating from legacy configuration files
 
 ## Project Structure
 
 ```
-├── index.js                  # Entry point: initialize MCP client, vector tests, start server
+├── index.js                  # Entry point: bootstrap MCP client and server startup sequence
+├── lib/
+│   ├── embedding.js          # Shared embedding helpers for vectorization routines
+│   └── mcpClient.js          # MCP client initialization and environment interpolation utilities
+├── scripts/
+│   └── diagnostics.js        # Optional diagnostics to validate embeddings and vector search
 ├── mcp-server.js             # Local MCP server (Express + MCP SDK) + RESTful API
 ├── vector_search.js          # Tool vectorization and retrieval logic
 ├── database.js               # SQLite + sqlite-vec manager
@@ -113,18 +117,29 @@ npm install
 
 ### 3. Configure Environment Variables
 - Copy `.env.example` to `.env`
-- Fill in the variables from the table below
+- Fill in the variables from the table below (at minimum set `EMBEDDING_NG_API_KEY` and a strong `ADMIN_API_KEY`).
+  Legacy variables with the `EMBEDDING_` prefix are still read for backward compatibility, but new deployments should prefer the `EMBEDDING_NG_` naming.
 
 | Variable | Description | Default | Required |
 | -------- | ----------- | ------- | -------- |
-| `EMBEDDING_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
-| `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
-| `EMBEDDING_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
-| `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
+| `EMBEDDING_NG_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
+| `EMBEDDING_NG_BASE_URL` | Embedding API Base URL | - | ❌ |
+| `EMBEDDING_NG_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
-| `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3000` | ❌ |
+| `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3398` | ❌ |
+| `TOOLS_DB_PATH` | Custom path for the SQLite database file | `<project>/tools_vector.db` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | Default number of tools returned by `retriever` | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | Minimum similarity threshold | `0.1` | ❌ |
+| `ADMIN_API_KEY` | Secret required to access `/api` administration endpoints | - | ✅ |
+| `ALLOW_UNAUTHENTICATED_API` | Set to `true` to bypass API key checks (development only) | `false` | ❌ |
+| `ALLOWED_ORIGINS` | Comma separated CORS allowlist | `http://localhost:3398` | ❌ |
+| `ADMIN_RATE_LIMIT_WINDOW_MS` | Rate limiting window for admin API (milliseconds) | `60000` | ❌ |
+| `ADMIN_RATE_LIMIT_MAX` | Maximum requests per window per client IP | `120` | ❌ |
+| `LOG_LEVEL` | Structured log level (`trace` → `fatal`) | `info` | ❌ |
+| `VECTORIZE_CONCURRENCY` | Number of parallel workers used when embedding tools | `4` | ❌ |
+
+> ℹ️ The bootstrapper first looks for `.env` in the project root and then falls back to `data/.env`, enabling the Docker Compose workflow described below without extra configuration.
 
 ### 4. Start Service
 
@@ -135,42 +150,82 @@ npm start
 The system will:
 - Initialize the SQLite database with MCP server configurations
 - Load 12 pre-configured MCP servers from the database
-- Start the local MCP server at `http://localhost:3000/mcp`
-- Provide RESTful API at `http://localhost:3000/api/mcp-servers`
+- Start the local MCP server at `http://localhost:3398/mcp`
+- Provide a secured RESTful API at `http://localhost:3398/api/...` (requires `ADMIN_API_KEY`)
 
-## MCP Server Management API
+## Testing
+
+Run the automated unit and integration checks with the built-in Node.js test runner:
+
+```bash
+LOG_LEVEL=error npm test
+```
+
+> ℹ️ The integration suite starts a real MCP server instance and will be skipped automatically when the `better-sqlite3` native bindings are not available (for example, on platforms where prebuilt binaries are missing).
+
+## Observability
+
+- **Structured logging** – all application logs are emitted as JSON with request context. Adjust verbosity with `LOG_LEVEL` (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
+- **Request logging middleware** – every HTTP call records method, URL, status code, and latency.
+- **Prometheus metrics** – scrape `GET /metrics` to collect `http_request_duration_seconds` histograms segmented by method, route, and status code.
+
+## Containerized Deployment
+
+Build and run the service using Docker:
+
+```bash
+# Build image
+docker build -t dextmcp .
+
+# Start with docker-compose (persists SQLite data in ./data)
+docker compose up -d
+```
+
+To mirror the integration workflow:
+
+1. Create a `data/` directory in the project root and move your `.env` file there (it will be mounted into the container).
+2. Start any remote MCP servers behind ToolHive and record their proxy URLs.
+3. Launch the stack with `docker compose up -d`; the service exposes MCP + admin APIs at `http://localhost:3398`.
+4. Use the admin API to update server entries so they point at the ToolHive proxy URLs.
+
+The compose file maps the MCP server to `localhost:3398`, mounts `./data` into `/usr/src/app/data` for the SQLite database and environment file, and surfaces the same environment variables described above for secure configuration.
+
+## MCP Server & Group Management API
 
 ### RESTful API Endpoints
 
-All MCP server configurations are managed through RESTful API:
+All MCP server configurations are managed through RESTful API (responses include a `group_names` array showing current memberships). Supply the `x-api-key` header (value: `ADMIN_API_KEY`) with every request. Requests that exceed the configured rate limits return `429 Too Many Requests`.
 
 #### Get All Servers
 ```bash
-curl http://localhost:3000/api/mcp-servers
-curl "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers
+curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3398/api/mcp-servers?enabled=true&server_type=http"
 ```
 
 #### Get Specific Server
 ```bash
-curl http://localhost:3000/api/mcp-servers/1
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers/1
 ```
 
 #### Create New Server
 ```bash
 # STDIO Server
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-stdio-server",
     "server_type": "stdio",
     "command": "npx",
     "args": ["my-package"],
-    "description": "My custom MCP server"
+    "description": "My custom MCP server",
+    "group_names": ["devtools"]
   }'
 
 # HTTP Server
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-http-server",
     "server_type": "http",
@@ -178,24 +233,92 @@ curl -X POST http://localhost:3000/api/mcp-servers \
     "headers": {
       "Authorization": "Bearer token"
     },
-    "description": "HTTP MCP server"
+    "description": "HTTP MCP server",
+    "group_names": ["docs", "devtools"]
   }'
 ```
 
 #### Update Server
 ```bash
-curl -X PUT http://localhost:3000/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "description": "Updated description",
-    "enabled": false
+    "enabled": false,
+    "group_names": ["devtools"]
+  }'
+```
+
+#### Add Server to Groups
+```bash
+curl -X POST http://localhost:3398/api/mcp-servers/1/groups \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
+  -d '{
+    "group_names": ["devtools", "docs"]
+  }'
+```
+
+#### Remove Server from Groups
+```bash
+curl -X DELETE http://localhost:3398/api/mcp-servers/1/groups \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
+  -d '{
+    "group_names": ["docs"]
   }'
 ```
 
 #### Delete Server
 ```bash
-curl -X DELETE http://localhost:3000/api/mcp-servers/1
+curl -X DELETE http://localhost:3398/api/mcp-servers/1 \
+  -H "x-api-key: $ADMIN_API_KEY"
 ```
+
+#### Trigger Tool Sync
+```bash
+curl -X POST http://localhost:3398/api/sync \
+  -H "x-api-key: $ADMIN_API_KEY"
+```
+
+Use this endpoint whenever remote MCP servers add, update, or remove tools. The call refreshes the vector index without restarting the local service.
+
+### Group Management
+
+Use the following endpoints to organize MCP servers into named groups:
+
+```bash
+# List all groups with server counts
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-groups
+
+# Create a new group
+curl -X POST http://localhost:3398/api/mcp-groups \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
+  -d '{
+    "group_name": "devtools",
+    "description": "Developer tooling servers"
+  }'
+
+# Update a group
+curl -X PATCH http://localhost:3398/api/mcp-groups/1 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
+  -d '{
+    "description": "Updated description"
+  }'
+
+# Delete a group
+curl -X DELETE http://localhost:3398/api/mcp-groups/1 \
+  -H "x-api-key: $ADMIN_API_KEY"
+```
+
+### Security Hardening
+
+- **API key authentication**: Set `ADMIN_API_KEY` and include it as the `x-api-key` header for every `/api` request. Set `ALLOW_UNAUTHENTICATED_API=true` only for local experiments.
+- **Rate limiting**: Adjust `ADMIN_RATE_LIMIT_WINDOW_MS` and `ADMIN_RATE_LIMIT_MAX` to throttle abusive clients. When the limit is exceeded the server returns HTTP 429.
+- **CORS allowlist**: Restrict browser access to trusted front-ends by configuring `ALLOWED_ORIGINS` (comma separated list). Requests from other origins are rejected with HTTP 403.
 
 ### Database Schema
 
@@ -218,9 +341,29 @@ CREATE TABLE mcp_servers (
 );
 ```
 
+Additional tables manage group metadata and relationships:
+
+```sql
+CREATE TABLE mcp_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mcp_server_groups (
+    server_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (server_id, group_id),
+    FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES mcp_groups(id) ON DELETE CASCADE
+);
+```
+
 ## MCP Tools API
 
-After startup, the local MCP server provides the following tools at `http://localhost:3000/mcp`:
+After startup, the local MCP server provides the following tools at `http://localhost:3398/mcp`:
 
 ### 1. `retriever` - Semantic Tool Search
 Retrieve the most relevant tools based on natural language descriptions.
@@ -230,7 +373,8 @@ Retrieve the most relevant tools based on natural language descriptions.
 const results = await client.call("retriever", {
   descriptions: ["I want to insert a timeline in a Feishu document"],
   sessionId: "abc123",  // 6-digit session ID, optional
-  serverNames: ["feishu"]  // Optional: filter by specific servers
+  serverNames: ["feishu"], // Optional: filter by specific servers
+  groupNames: ["devtools"] // Optional: filter by server groups
 });
 
 // Return format
@@ -335,7 +479,7 @@ db.close();
 
 3. **API Not Accessible**
    - Ensure MCP server is running
-   - Check port configuration (default: 3000)
+   - Check port configuration (default: 3398)
    - Test health endpoint: `GET /health`
 
 ### Debug Commands
@@ -345,10 +489,10 @@ db.close();
 sqlite3 tools_vector.db "SELECT server_name, server_type FROM mcp_servers WHERE enabled = 1;"
 
 # Test API health
-curl http://localhost:3000/health
+curl http://localhost:3398/health
 
 # View enabled servers
-curl "http://localhost:3000/api/mcp-servers?enabled=true"
+curl "http://localhost:3398/api/mcp-servers?enabled=true"
 ```
 
 ### Migration from Legacy Config

@@ -32,7 +32,7 @@ CREATE TABLE mcp_servers (
 - `GET /api/mcp-servers` - 获取服务器列表
 - `POST /api/mcp-servers` - 创建新服务器
 - `GET /api/mcp-servers/:id` - 获取特定服务器
-- `PUT /api/mcp-servers/:id` - 更新服务器
+- `PATCH /api/mcp-servers/:id` - 更新服务器
 - `DELETE /api/mcp-servers/:id` - 删除服务器
 
 ## 旧配置文件迁移 (已弃用)
@@ -54,12 +54,12 @@ node migrate-mcp-servers.js
 
 ### 获取所有启用的服务器
 ```bash
-curl http://localhost:3000/api/mcp-servers?enabled=true
+curl http://localhost:3398/api/mcp-servers?enabled=true
 ```
 
 ### 创建新的STDIO服务器
 ```bash
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -d '{
     "server_name": "my-server",
@@ -72,7 +72,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 
 ### 创建新的HTTP服务器
 ```bash
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -d '{
     "server_name": "my-http-server",
@@ -87,7 +87,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 
 ### 更新服务器配置
 ```bash
-curl -X PUT http://localhost:3000/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -d '{
     "description": "更新后的描述",
@@ -97,7 +97,7 @@ curl -X PUT http://localhost:3000/api/mcp-servers/1 \
 
 ### 删除服务器
 ```bash
-curl -X DELETE http://localhost:3000/api/mcp-servers/1
+curl -X DELETE http://localhost:3398/api/mcp-servers/1
 ```
 
 ## 优势
@@ -127,18 +127,18 @@ curl -X DELETE http://localhost:3000/api/mcp-servers/1
 - 确认服务器配置正确（URL、命令、参数等）
 - 检查网络连接和防火墙设置
 - 验证服务器类型是否正确（http/stdio）
-- 使用API更新服务器配置：`PUT /api/mcp-servers/:id`
+- 使用API更新服务器配置：`PATCH /api/mcp-servers/:id`
 
 ### 问题：API接口无法访问
 - 确认MCP服务器已启动
-- 检查端口配置（默认3000）
+- 检查端口配置（默认3398）
 - 验证CORS设置
 - 测试健康检查端点：`GET /health`
 
 ### 问题：如何查看当前配置的服务器
 ```bash
 # 获取所有启用的服务器
-curl http://localhost:3000/api/mcp-servers?enabled=true
+curl http://localhost:3398/api/mcp-servers?enabled=true
 
 # 直接查询数据库
 sqlite3 tools_vector.db "SELECT server_name, server_type, url, command FROM mcp_servers WHERE enabled = 1;"
