@@ -5,9 +5,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node mcp-server.js",
+    "dev": "NODE_ENV=development node mcp-server.js",
+    "test": "NODE_ENV=test node --test",
+    "test:watch": "NODE_ENV=test node --test --watch",
+    "test:coverage": "NODE_ENV=test node --test --experimental-test-coverage"
   },
   "keywords": [
     "nodejs",
@@ -29,5 +31,6 @@
     "sqlite3": "^5.1.7",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.24.6"
-  }
+  },
+  "devDependencies": {}
 }
