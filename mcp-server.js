@@ -16,7 +16,7 @@ import {
     maskError
 } from './security.js';
 
-// 从数据库读取服务器信息并生成增强描述
+// Read server information from database and generate enhanced description
 async function getEnhancedServerDescription() {
     try {
         const serverDescriptions = [];
@@ -62,8 +62,8 @@ async function getEnhancedServerDescription() {
                 serverDescriptions.push(description);
             }
         } catch (error) {
-            appLogger.error({ err: error }, '获取MCP工具信息失败');
-            // 如果获取工具信息失败，仍然返回基本的服务器描述
+            appLogger.error({ err: error }, 'Failed to get MCP tool information');
+            // If getting tool information fails, still return basic server description
             try {
                 await ensureVectorDatabaseReady();
                 const db = vectorDatabase.db;
@@ -78,17 +78,17 @@ async function getEnhancedServerDescription() {
                     }
                 }
             } catch (dbError) {
-                appLogger.error({ err: dbError }, '从数据库读取服务器配置失败');
+                appLogger.error({ err: dbError }, 'Failed to read server configuration from database');
             }
         }
 
         if (serverDescriptions.length > 0) {
-            return `当前可以使用的服务器：${serverDescriptions.join('、')}，务必不要直接使用它们，只可以使用它们用来检索！`;
+            return `Currently available servers：${serverDescriptions.join('、')}，Do not use them directly, use them only for retrieval！`;
         }
 
         return '';
     } catch (error) {
-        appLogger.error({ err: error }, '获取增强服务器描述失败');
+        appLogger.error({ err: error }, 'Failed to get enhanced server description');
         return '';
     }
 }

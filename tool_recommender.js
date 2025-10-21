@@ -1,5 +1,5 @@
-// 工具推荐API模块
-// 提供简单易用的工具推荐接口
+// Tool recommendation API module
+// Provide simple and easy-to-use tool recommendation interface
 
 import VectorSearch from './vector_search.js';
 
@@ -10,13 +10,13 @@ class ToolRecommender {
     }
 
     /**
-     * 初始化工具推荐系统
-     * @param {Object} mcpClient - MCP客户端实例
-     * @param {Object} options - 初始化选项
+     * Initialize tool recommendation system
+     * @param {Object} mcpClient - MCP client instance
+     * @param {Object} options - Initialization options
      */
     async initialize(mcpClient, options = {}) {
         try {
-            console.log('🚀 初始化工具推荐系统...');
+            console.log('🚀 Initialize tool recommendation system...');
             
             this.mcpClient = mcpClient;
             this.vectorSearch = new VectorSearch();
@@ -26,7 +26,7 @@ class ToolRecommender {
             
             // 选项配置
             const {
-                autoIndex = true,  // 是否自动建立索引
+                autoIndex = true,  // Whether to auto-index
                 modelName = null   // 模型名称
             } = options;
             
@@ -35,17 +35,17 @@ class ToolRecommender {
                 || process.env.EMBEDDING_MODEL_NAME
                 || 'doubao-embedding-text-240715';
             
-            // 自动为MCP工具建立向量索引
+            // Auto-build vector index for MCP tools
             if (autoIndex && mcpClient) {
-                console.log('📊 自动为MCP工具建立向量索引...');
+                console.log('📊 Auto-build vector index for MCP tools...');
                 await this.vectorSearch.indexMCPTools(mcpClient, this.modelName);
             }
             
             this.isReady = true;
-            console.log('✅ 工具推荐系统初始化完成');
+            console.log('✅ Tool recommendation system initialization completed');
             
         } catch (error) {
-            console.error('❌ 工具推荐系统初始化失败:', error.message);
+            console.error('❌ Tool recommendation system initialization failed:', error.message);
             throw error;
         }
     }

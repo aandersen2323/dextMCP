@@ -1,4 +1,4 @@
-// 向量搜索和工具推荐模块 (使用sqlite-vec)
+// Vector search and tool recommendation module (using sqlite-vec)
 import VectorDatabase from './database.js';
 import { vectorizeString } from './lib/embedding.js';
 import { createChildLogger } from './observability.js';
@@ -52,52 +52,52 @@ class VectorSearch {
     }
 
     /**
-     * 初始化向量搜索引擎
+     * Initialize vector search engine
      */
     async initialize() {
         try {
             await this.db.initialize();
             this.isInitialized = true;
-            vectorLogger.info('🔍 向量搜索引擎初始化成功 (使用better-sqlite3 + sqlite-vec)');
+            vectorLogger.info('🔍 Vector search engine initialized successfully (使用better-sqlite3 + sqlite-vec)');
         } catch (error) {
-            vectorLogger.error({ err: error }, '❌ 向量搜索引擎初始化失败');
+            vectorLogger.error({ err: error }, '❌ Vector search engine initialization failed');
             throw error;
         }
     }
 
     /**
-     * 搜索最相似的工具 (使用sqlite-vec的高效搜索)
-     * @param {string} query - 用户查询文本
-     * @param {string} modelName - 使用的模型名称
-     * @param {number} topK - 返回最相似的K个结果
-     * @param {number} threshold - 相似度阈值 (0-1之间)
+     * Search for most similar tools (using sqlite-vec的高效搜索)
+     * @param {string} query - User query text
+     * @param {string} modelName - Model name to use
+     * @param {number} topK - Return top K most similar results
+     * @param {number} threshold - 相似度threshold (0-1之间)
      * @param {Array<string>} serverNames - 可选的服务器名称列表，用于过滤工具
      * @returns {Promise<Array>} 相似工具列表
      */
     async searchSimilarTools(query, modelName, topK = 5, threshold = 0.1, serverNames = null) {
         try {
             if (!this.isInitialized) {
-                throw new Error('向量搜索引擎未初始化');
+                throw new Error('Vector search engine not initialized');
             }
 
             const serverInfo = serverNames && serverNames.length > 0 ? ` (服务器过滤: ${serverNames.join(', ')})` : '';
-            vectorLogger.info(`🔍 开始搜索: "${query}" (模型: ${modelName}, topK: ${topK}${serverInfo})`);
+            vectorLogger.info(`🔍 Starting search: "${query}" (模型: ${modelName}, topK: ${topK}${serverInfo})`);
 
-            // 1. 将查询文本向量化
+            // 1. Vectorize query text
             const queryVector = await vectorizeString(query);
-            vectorLogger.info(`📊 查询向量维度: ${queryVector.length}`);
+            vectorLogger.info(`📊 Query vector dimension: ${queryVector.length}`);
 
-            // 2. 使用sqlite-vec进行高效的向量相似性搜索
+            // 2. using sqlite-vec进行高效的向量相似性搜索
             const results = await this.db.searchSimilarVectors(queryVector, topK, threshold, serverNames);
 
             if (results.length === 0) {
-                vectorLogger.info('⚠️  没有找到满足条件的相似工具');
+                vectorLogger.info('⚠️  No similar tools found matching criteria');
                 return [];
             }
 
-            vectorLogger.info(`✅ 搜索完成，找到 ${results.length} 个相似工具 (阈值: ${threshold})`);
+            vectorLogger.info(`✅ Search completed, found ${results.length} 个相似工具 (threshold: ${threshold})`);
 
-            // 输出详细结果
+            // Output detailed results
             results.forEach((result, index) => {
                 vectorLogger.info(`${index + 1}. ${result.tool_name} (相似度: ${result.similarity.toFixed(4)}, 距离: ${result.distance.toFixed(4)})`);
             });
@@ -194,7 +194,7 @@ class VectorSearch {
                 groupNames = null
             } = options;
 
-            vectorLogger.info(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
+            vectorLogger.info(`🤖 开始工具推荐流程 (using sqlite-vec)...`);
             vectorLogger.info(`📝 查询: "${query}"`);
             vectorLogger.info(`🔧 模型: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
@@ -275,7 +275,7 @@ class VectorSearch {
                 || process.env.EMBEDDING_MODEL_NAME
                 || 'doubao-embedding-text-240715';
             
-            vectorLogger.info('📊 开始为MCP工具建立向量索引 (使用sqlite-vec)...');
+            vectorLogger.info('📊 开始为MCP工具建立向量索引 (using sqlite-vec)...');
             vectorLogger.info(`🔧 使用模型: ${defaultModelName}`);
 
             // 获取所有MCP工具
@@ -378,7 +378,7 @@ class VectorSearch {
             // 批量保存到数据库
             const saveResults = await this.db.saveToolVectorsBatch(vectorizedTools, defaultModelName);
             
-            vectorLogger.info(`✅ 向量索引建立完成 (使用sqlite-vec):`);
+            vectorLogger.info(`✅ 向量索引建立完成 (using sqlite-vec):`);
             vectorLogger.info(`   - 总工具数: ${tools.length}`);
             vectorLogger.info(`   - 新增向量化: ${vectorizedTools.length}`);
             vectorLogger.info(`   - 保存到数据库: ${saveResults.length}`);
@@ -437,13 +437,13 @@ class VectorSearch {
      * @param {string} newToolName - 新工具名称
      * @param {string} newDescription - 新工具描述
      * @param {Array} similarTools - 相似工具列表
-     * @param {number} similarityThreshold - 相似度阈值 (默认0.96)
+     * @param {number} similarityThreshold - 相似度threshold (默认0.96)
      * @returns {Array} 需要删除的工具列表
      */
     identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = 0.96) {
         const toDelete = [];
         
-        vectorLogger.info(`🔍 检查 ${similarTools.length} 个相似工具是否需要删除 (阈值: ${similarityThreshold})`);
+        vectorLogger.info(`🔍 检查 ${similarTools.length} 个相似工具是否需要删除 (threshold: ${similarityThreshold})`);
         
         for (const similar of similarTools) {
             const vectorSimilarity = similar.similarity;
@@ -458,7 +458,7 @@ class VectorSearch {
                 vectorLogger.info(`🎯 判定为非常相似工具，将被删除: ${similar.tool_name}`);
                 toDelete.push(similar);
             } else {
-                vectorLogger.info(`✅ 保留工具: ${similar.tool_name} (相似度未达到阈值)`);
+                vectorLogger.info(`✅ 保留工具: ${similar.tool_name} (相似度未达到threshold)`);
             }
         }
         
@@ -475,7 +475,7 @@ class VectorSearch {
     async searchSimilar(query, options = {}) {
         try {
             if (!this.isInitialized) {
-                throw new Error('向量搜索引擎未初始化');
+                throw new Error('Vector search engine not initialized');
             }
 
             const {
