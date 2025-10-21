@@ -3,7 +3,7 @@ import crypto from 'crypto';
 function parseAllowedOrigins() {
     const raw = process.env.ALLOWED_ORIGINS;
     if (!raw || raw.trim().length === 0) {
-        return ['http://localhost:3398'];
+        return ['http://localhost:3000'];
     }
 
     return raw

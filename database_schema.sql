@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS tool_vectors (
 
 -- 创建向量索引表 (sqlite-vec)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_tool_embeddings USING vec0(
-    tool_vector FLOAT[1024]                         -- 向量数据，默认与 EMBEDDING_NG_VECTOR_DIMENSION 保持一致
+    tool_vector FLOAT[1024]                         -- 向量数据，默认与EMBEDDING_VECTOR_DIMENSION保持一致
 );
 
 -- MCP服务器配置表

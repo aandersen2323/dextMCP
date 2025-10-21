@@ -1,8 +1,8 @@
-.git
-.gitignore
-.idea
-.vscode
 node_modules
-.env
-*.log
+npm-debug.log
+.DS_Store
+tests
+coverage
+*.sqlite
 tools_vector.db
+.env

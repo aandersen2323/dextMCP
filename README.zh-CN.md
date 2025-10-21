@@ -118,8 +118,7 @@ npm install
 
 ### 3. 配置环境变量
 - 复制 `.env.example` 为 `.env`
-- 按需填写下表中的变量（至少配置 `EMBEDDING_NG_API_KEY` 和一个足够复杂的 `ADMIN_API_KEY`）。
-  系统会继续兼容旧版的 `EMBEDDING_` 前缀变量，但推荐逐步迁移到 `EMBEDDING_NG_` 命名。
+- 按需填写下表中的变量（至少配置 `EMBEDDING_API_KEY` 和一个足够复杂的 `ADMIN_API_KEY`）
 
 | 变量名 | 说明 | 默认值 | 必需 |
 | ------ | ---- | ------ | ---- |
@@ -128,19 +127,16 @@ npm install
 | `EMBEDDING_NG_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
 | `EMBEDDING_NG_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
-| `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3398` | ❌ |
+| `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3000` | ❌ |
 | `TOOLS_DB_PATH` | 自定义 SQLite 数据库文件路径 | `<project>/tools_vector.db` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | `retriever` 默认返回的工具数量 | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | 最低相似度阈值 | `0.1` | ❌ |
 | `ADMIN_API_KEY` | 访问 `/api` 管理端点所需的密钥 | - | ✅ |
 | `ALLOW_UNAUTHENTICATED_API` | 设为 `true` 可跳过密钥校验（仅限本地调试） | `false` | ❌ |
-| `ALLOWED_ORIGINS` | 允许的 CORS 来源列表（逗号分隔） | `http://localhost:3398` | ❌ |
+| `ALLOWED_ORIGINS` | 允许的 CORS 来源列表（逗号分隔） | `http://localhost:3000` | ❌ |
 | `ADMIN_RATE_LIMIT_WINDOW_MS` | 管理 API 限流窗口（毫秒） | `60000` | ❌ |
 | `ADMIN_RATE_LIMIT_MAX` | 每个客户端在窗口内允许的请求数 | `120` | ❌ |
-| `LOG_LEVEL` | 日志级别（`trace` 至 `fatal`） | `info` | ❌ |
 | `VECTORIZE_CONCURRENCY` | 工具向量化并发工作数 | `4` | ❌ |
-
-> ℹ️ 启动流程会优先加载项目根目录下的 `.env`，若不存在则回退到 `data/.env`，便于直接套用下文的 Docker Compose 工作流。
 
 ### 4. 启动服务
 
@@ -151,45 +147,8 @@ npm start
 系统将会：
 - 初始化包含 MCP 服务器配置的 SQLite 数据库
 - 从数据库加载 12 个预配置的 MCP 服务器
-- 在 `http://localhost:3398/mcp` 启动本地 MCP 服务器
-- 在 `http://localhost:3398/api/...` 提供需要 `ADMIN_API_KEY` 的安全 RESTful API
-
-## 测试
-
-使用 Node.js 自带的测试运行器执行单元与集成测试：
-
-```bash
-LOG_LEVEL=error npm test
-```
-
-> ℹ️ 集成测试会启动真实的 MCP 服务实例；当运行环境缺少 `better-sqlite3` 的原生绑定（例如未编译的 Linux 镜像）时，该用例会自动跳过。
-
-## 可观测性
-
-- **结构化日志**：所有日志均以带上下文的 JSON 输出，可通过 `LOG_LEVEL`（`trace`、`debug`、`info`、`warn`、`error`、`fatal`）调整详细程度。
-- **请求日志中间件**：记录每个 HTTP 请求的 Method、URL、状态码和耗时。
-- **Prometheus 指标**：访问 `GET /metrics` 可获取 `http_request_duration_seconds` 直方图，用于监控请求延迟。
-
-## 容器化部署
-
-可以通过 Docker 快速启动：
-
-```bash
-# 构建镜像
-docker build -t dextmcp .
-
-# 使用 docker-compose 运行（SQLite 数据持久化在 ./data）
-docker compose up -d
-```
-
-推荐按照以下步骤部署并与 ToolHive 集成：
-
-1. 在项目根目录创建 `data/` 文件夹，并将 `.env` 移动到其中（容器会挂载该目录）。
-2. 通过 ToolHive 启动所有远程 MCP 服务器，记录其代理地址。
-3. 执行 `docker compose up -d` 启动服务，`http://localhost:3398` 会暴露 MCP 与管理接口。
-4. 使用管理 API 更新服务器配置，使其指向对应的 ToolHive 代理地址。
-
-`docker-compose.yml` 会将服务映射到本地 `3398` 端口，并把 `./data` 挂载到容器的 `/usr/src/app/data`（用于 SQLite 数据库与 `.env`），同时支持通过环境变量完成安全配置。
+- 在 `http://localhost:3000/mcp` 启动本地 MCP 服务器
+- 在 `http://localhost:3000/api/...` 提供需要 `ADMIN_API_KEY` 的安全 RESTful API
 
 ## MCP 服务器管理 API
 
@@ -199,13 +158,13 @@ docker compose up -d
 
 #### 获取所有服务器
 ```bash
-curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers
-curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3398/api/mcp-servers?enabled=true&server_type=http"
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers
+curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
 ```
 
 #### 获取特定服务器
 ```bash
-curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers/1
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 ```
 
 #### 创建新服务器
@@ -239,7 +198,7 @@ curl -X POST http://localhost:3398/api/mcp-servers \
 
 #### 更新服务器
 ```bash
-curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -250,17 +209,9 @@ curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
 
 #### 删除服务器
 ```bash
-curl -X DELETE http://localhost:3398/api/mcp-servers/1 \
+curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
-
-#### 手动触发工具同步
-```bash
-curl -X POST http://localhost:3398/api/sync \
-  -H "x-api-key: $ADMIN_API_KEY"
-```
-
-当远程 MCP 服务器新增、修改或下线工具时，可以调用该接口重新抓取并向量化最新的工具列表，无需重启本地服务。
 
 ### 安全加固
 

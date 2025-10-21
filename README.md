@@ -119,8 +119,7 @@ npm install
 
 ### 3. Configure Environment Variables
 - Copy `.env.example` to `.env`
-- Fill in the variables from the table below (at minimum set `EMBEDDING_NG_API_KEY` and a strong `ADMIN_API_KEY`).
-  Legacy variables with the `EMBEDDING_` prefix are still read for backward compatibility, but new deployments should prefer the `EMBEDDING_NG_` naming.
+- Fill in the variables from the table below (at minimum set `EMBEDDING_API_KEY` and a strong `ADMIN_API_KEY`)
 
 | Variable | Description | Default | Required |
 | -------- | ----------- | ------- | -------- |
@@ -129,19 +128,16 @@ npm install
 | `EMBEDDING_NG_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
 | `EMBEDDING_NG_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
-| `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3398` | ❌ |
+| `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3000` | ❌ |
 | `TOOLS_DB_PATH` | Custom path for the SQLite database file | `<project>/tools_vector.db` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | Default number of tools returned by `retriever` | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | Minimum similarity threshold | `0.1` | ❌ |
 | `ADMIN_API_KEY` | Secret required to access `/api` administration endpoints | - | ✅ |
 | `ALLOW_UNAUTHENTICATED_API` | Set to `true` to bypass API key checks (development only) | `false` | ❌ |
-| `ALLOWED_ORIGINS` | Comma separated CORS allowlist | `http://localhost:3398` | ❌ |
+| `ALLOWED_ORIGINS` | Comma separated CORS allowlist | `http://localhost:3000` | ❌ |
 | `ADMIN_RATE_LIMIT_WINDOW_MS` | Rate limiting window for admin API (milliseconds) | `60000` | ❌ |
 | `ADMIN_RATE_LIMIT_MAX` | Maximum requests per window per client IP | `120` | ❌ |
-| `LOG_LEVEL` | Structured log level (`trace` → `fatal`) | `info` | ❌ |
 | `VECTORIZE_CONCURRENCY` | Number of parallel workers used when embedding tools | `4` | ❌ |
-
-> ℹ️ The bootstrapper first looks for `.env` in the project root and then falls back to `data/.env`, enabling the Docker Compose workflow described below without extra configuration.
 
 ### 4. Start Service
 
@@ -152,45 +148,8 @@ npm start
 The system will:
 - Initialize the SQLite database with MCP server configurations
 - Load 12 pre-configured MCP servers from the database
-- Start the local MCP server at `http://localhost:3398/mcp`
-- Provide a secured RESTful API at `http://localhost:3398/api/...` (requires `ADMIN_API_KEY`)
-
-## Testing
-
-Run the automated unit and integration checks with the built-in Node.js test runner:
-
-```bash
-LOG_LEVEL=error npm test
-```
-
-> ℹ️ The integration suite starts a real MCP server instance and will be skipped automatically when the `better-sqlite3` native bindings are not available (for example, on platforms where prebuilt binaries are missing).
-
-## Observability
-
-- **Structured logging** – all application logs are emitted as JSON with request context. Adjust verbosity with `LOG_LEVEL` (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
-- **Request logging middleware** – every HTTP call records method, URL, status code, and latency.
-- **Prometheus metrics** – scrape `GET /metrics` to collect `http_request_duration_seconds` histograms segmented by method, route, and status code.
-
-## Containerized Deployment
-
-Build and run the service using Docker:
-
-```bash
-# Build image
-docker build -t dextmcp .
-
-# Start with docker-compose (persists SQLite data in ./data)
-docker compose up -d
-```
-
-To mirror the integration workflow:
-
-1. Create a `data/` directory in the project root and move your `.env` file there (it will be mounted into the container).
-2. Start any remote MCP servers behind ToolHive and record their proxy URLs.
-3. Launch the stack with `docker compose up -d`; the service exposes MCP + admin APIs at `http://localhost:3398`.
-4. Use the admin API to update server entries so they point at the ToolHive proxy URLs.
-
-The compose file maps the MCP server to `localhost:3398`, mounts `./data` into `/usr/src/app/data` for the SQLite database and environment file, and surfaces the same environment variables described above for secure configuration.
+- Start the local MCP server at `http://localhost:3000/mcp`
+- Provide a secured RESTful API at `http://localhost:3000/api/...` (requires `ADMIN_API_KEY`)
 
 ## MCP Server & Group Management API
 
@@ -200,13 +159,13 @@ All MCP server configurations are managed through RESTful API (responses include
 
 #### Get All Servers
 ```bash
-curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers
-curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3398/api/mcp-servers?enabled=true&server_type=http"
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers
+curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
 ```
 
 #### Get Specific Server
 ```bash
-curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-servers/1
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 ```
 
 #### Create New Server
@@ -242,7 +201,7 @@ curl -X POST http://localhost:3398/api/mcp-servers \
 
 #### Update Server
 ```bash
-curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -254,7 +213,7 @@ curl -X PATCH http://localhost:3398/api/mcp-servers/1 \
 
 #### Add Server to Groups
 ```bash
-curl -X POST http://localhost:3398/api/mcp-servers/1/groups \
+curl -X POST http://localhost:3000/api/mcp-servers/1/groups \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -264,7 +223,7 @@ curl -X POST http://localhost:3398/api/mcp-servers/1/groups \
 
 #### Remove Server from Groups
 ```bash
-curl -X DELETE http://localhost:3398/api/mcp-servers/1/groups \
+curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -274,17 +233,9 @@ curl -X DELETE http://localhost:3398/api/mcp-servers/1/groups \
 
 #### Delete Server
 ```bash
-curl -X DELETE http://localhost:3398/api/mcp-servers/1 \
+curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
-
-#### Trigger Tool Sync
-```bash
-curl -X POST http://localhost:3398/api/sync \
-  -H "x-api-key: $ADMIN_API_KEY"
-```
-
-Use this endpoint whenever remote MCP servers add, update, or remove tools. The call refreshes the vector index without restarting the local service.
 
 ### Group Management
 
@@ -292,10 +243,10 @@ Use the following endpoints to organize MCP servers into named groups:
 
 ```bash
 # List all groups with server counts
-curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3398/api/mcp-groups
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-groups
 
 # Create a new group
-curl -X POST http://localhost:3398/api/mcp-groups \
+curl -X POST http://localhost:3000/api/mcp-groups \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -304,7 +255,7 @@ curl -X POST http://localhost:3398/api/mcp-groups \
   }'
 
 # Update a group
-curl -X PATCH http://localhost:3398/api/mcp-groups/1 \
+curl -X PATCH http://localhost:3000/api/mcp-groups/1 \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -312,7 +263,7 @@ curl -X PATCH http://localhost:3398/api/mcp-groups/1 \
   }'
 
 # Delete a group
-curl -X DELETE http://localhost:3398/api/mcp-groups/1 \
+curl -X DELETE http://localhost:3000/api/mcp-groups/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
 
