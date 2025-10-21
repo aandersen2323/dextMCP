@@ -2,26 +2,11 @@
 import VectorDatabase from './database.js';
 import { vectorizeString } from './lib/embedding.js';
 import { createChildLogger } from './observability.js';
+import { runWithConcurrency } from './lib/utils.js';
 
-async function runWithConcurrency(items, limit, handler) {
-    const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
-    let index = 0;
-
-    const workers = Array.from({ length: Math.min(concurrency, items.length || 0) }, async () => {
-        while (true) {
-            const currentIndex = index;
-            index += 1;
-
-            if (currentIndex >= items.length) {
-                break;
-            }
-
-            await handler(items[currentIndex], currentIndex);
-        }
-    });
-
-    await Promise.all(workers);
-}
+// Similarity thresholds for duplicate detection
+const SIMILARITY_SEARCH_THRESHOLD = 0.7;
+const DUPLICATE_DETECTION_THRESHOLD = 0.96;
 
 const vectorLogger = createChildLogger({ module: 'vector-search' });
 
@@ -29,6 +14,19 @@ class VectorSearch {
     constructor() {
         this.db = new VectorDatabase();
         this.isInitialized = false;
+    }
+
+    /**
+     * Get default model name from environment or fallback
+     * @param {string} modelName - Optional model name override
+     * @returns {string} Model name to use
+     * @private
+     */
+    _getDefaultModelName(modelName = null) {
+        return modelName
+            || process.env.EMBEDDING_NG_MODEL_NAME
+            || process.env.EMBEDDING_MODEL_NAME
+            || 'doubao-embedding-text-240715';
     }
 
     /**
@@ -161,10 +159,7 @@ class VectorSearch {
     async recommendTools(query, mcpClient, modelName = null, options = {}) {
         try {
             // Use the default model name when none is provided
-            const defaultModelName = modelName
-                || process.env.EMBEDDING_NG_MODEL_NAME
-                || process.env.EMBEDDING_MODEL_NAME
-                || 'doubao-embedding-text-240715';
+            const defaultModelName = this._getDefaultModelName(modelName);
 
             const {
                 topK = 5,
@@ -179,7 +174,7 @@ class VectorSearch {
             vectorLogger.info(`🔧 Model: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, server filter: ${serverNames.join(', ')}` : '';
             const groupInfo = groupNames && groupNames.length > 0 ? `, group filter: ${groupNames.join(', ')}` : '';
-            console.log(`⚙️  Parameters: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
+            vectorLogger.info(`⚙️  Parameters: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
 
             let effectiveServerNames = serverNames;
 
@@ -187,7 +182,7 @@ class VectorSearch {
                 const groupServerNames = this.db.getServerNamesForGroups(groupNames);
 
                 if (groupServerNames.length === 0) {
-                    console.log('⚠️  Specified groups did not match any servers; returning empty result');
+                    vectorLogger.info('⚠️  Specified groups did not match any servers; returning empty result');
                     return [];
                 }
 
@@ -195,7 +190,7 @@ class VectorSearch {
                     effectiveServerNames = effectiveServerNames.filter(name => groupServerNames.includes(name));
 
                     if (effectiveServerNames.length === 0) {
-                        console.log('⚠️  Group filter and server filter do not overlap; returning empty result');
+                        vectorLogger.info('⚠️  Group filter and server filter do not overlap; returning empty result');
                         return [];
                     }
                 } else {
@@ -250,11 +245,8 @@ class VectorSearch {
      */
     async indexMCPTools(mcpClient, modelName = null) {
         try {
-            const defaultModelName = modelName
-                || process.env.EMBEDDING_NG_MODEL_NAME
-                || process.env.EMBEDDING_MODEL_NAME
-                || 'doubao-embedding-text-240715';
-            
+            const defaultModelName = this._getDefaultModelName(modelName);
+
             vectorLogger.info('📊 Starting vector indexing for MCP tools (using sqlite-vec)...');
             vectorLogger.info(`🔧 Model in use: ${defaultModelName}`);
 
@@ -300,24 +292,24 @@ class VectorSearch {
 
             await runWithConcurrency(toolsToVectorize, concurrencyLimit, async (tool, index) => {
                 try {
-                    console.log(`📊 Vectorization progress: ${index + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
+                    vectorLogger.info(`📊 Vectorization progress: ${index + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
 
                     const vector = await vectorizeString(`${tool.toolName} ${tool.description}`.trim());
 
-                    console.log(`🔍 Check for similar tools: ${tool.toolName}`);
+                    vectorLogger.info(`🔍 Check for similar tools: ${tool.toolName}`);
 
                     try {
                         const queryVector = vector;
-                        const similarTools = await this.db.searchSimilarVectors(queryVector, 10, 0.7);
+                        const similarTools = await this.db.searchSimilarVectors(queryVector, 10, SIMILARITY_SEARCH_THRESHOLD);
 
                         if (similarTools.length > 0) {
-                            console.log(`📊 Found ${similarTools.length} candidate similar tools`);
+                            vectorLogger.info(`📊 Found ${similarTools.length} candidate similar tools`);
 
                             const toDelete = this.identifySimilarToolsToDelete(
                                 tool.toolName,
                                 tool.description,
                                 similarTools,
-                                0.96
+                                DUPLICATE_DETECTION_THRESHOLD
                             );
 
                             for (const oldTool of toDelete) {
@@ -417,10 +409,10 @@ class VectorSearch {
      * @param {string} newToolName - New tool name
      * @param {string} newDescription - New tool description
      * @param {Array} similarTools - list of similar tools
-     * @param {number} similarityThreshold - similarity threshold (default 0.96)
+     * @param {number} similarityThreshold - similarity threshold (default DUPLICATE_DETECTION_THRESHOLD)
      * @returns {Array} Tools flagged for deletion
      */
-    identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = 0.96) {
+    identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = DUPLICATE_DETECTION_THRESHOLD) {
         const toDelete = [];
 
         vectorLogger.info(`🔍 Checking whether ${similarTools.length} similar tools should be removed (threshold: ${similarityThreshold})`);
@@ -461,12 +453,11 @@ class VectorSearch {
             const {
                 topK = 5,
                 threshold = 0.1,
-                modelName = process.env.EMBEDDING_NG_MODEL_NAME
-                    || process.env.EMBEDDING_MODEL_NAME
-                    || 'doubao-embedding-text-240715'
+                modelName = null
             } = options;
 
-            const results = await this.searchSimilarTools(query, modelName, topK, threshold);
+            const defaultModelName = this._getDefaultModelName(modelName);
+            const results = await this.searchSimilarTools(query, defaultModelName, topK, threshold);
             return results;
 
         } catch (error) {
@@ -499,11 +490,8 @@ class VectorSearch {
      */
     async clearIndex(modelName = null) {
         try {
-            const defaultModelName = modelName
-                || process.env.EMBEDDING_NG_MODEL_NAME
-                || process.env.EMBEDDING_MODEL_NAME
-                || 'doubao-embedding-text-240715';
-            
+            const defaultModelName = this._getDefaultModelName(modelName);
+
             vectorLogger.info(`🗑️  Clearing vector index: ${defaultModelName}`);
             
             // This step clears data from the vector table
