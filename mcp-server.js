@@ -7,6 +7,13 @@ import VectorSearch from './vector_search.js';
 import VectorDatabase from './database.js';
 import { initializeMCPClient, getMCPClient } from './index.js';
 import crypto from 'crypto';
+import {
+    buildCorsOptions,
+    createAdminAuthenticator,
+    createInMemoryRateLimiter,
+    secureSessionId,
+    maskError
+} from './security.js';
 
 // 从数据库读取服务器信息并生成增强描述
 async function getEnhancedServerDescription() {
@@ -218,7 +225,7 @@ server.registerTool(
             }
 
             if (needToGenerateNewSession) {
-                finalSessionId = Math.random().toString(36).substring(2, 8);
+                finalSessionId = secureSessionId();
                 console.log(`🆕 生成新的sessionId: ${finalSessionId}`);
                 isFirstTimeSession = true;
             }
@@ -418,26 +425,32 @@ server.registerResource(
 const app = express();
 
 // CORS configuration
-const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-
-        // In production, you might want to restrict this to specific domains
-        // For now, allowing all origins for development
-        return callback(null, true);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'mcp-protocol-version'],
-    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
-};
+const corsOptions = buildCorsOptions();
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
 // Handle preflight requests for the /mcp endpoint
 app.options('/mcp', cors(corsOptions));
+
+const adminRateLimitWindowMs = parseInt(process.env.ADMIN_RATE_LIMIT_WINDOW_MS || '60000', 10);
+const adminRateLimitMax = parseInt(process.env.ADMIN_RATE_LIMIT_MAX || '120', 10);
+const adminRateLimiter = createInMemoryRateLimiter({
+    windowMs: Number.isFinite(adminRateLimitWindowMs) ? adminRateLimitWindowMs : 60000,
+    max: Number.isFinite(adminRateLimitMax) ? adminRateLimitMax : 120
+});
+const adminAuthenticator = createAdminAuthenticator();
+const adminRouter = express.Router();
+adminRouter.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(204);
+        return;
+    }
+    next();
+});
+adminRouter.use(adminRateLimiter);
+adminRouter.use(adminAuthenticator);
+app.use('/api', adminRouter);
 
 // Health check endpoint
 app.get('/health', cors(corsOptions), (_req, res) => {
@@ -585,7 +598,7 @@ function formatMcpGroupRow(row) {
 }
 
 // GET /api/mcp-servers - 获取所有MCP服务器
-app.get('/api/mcp-servers', cors(corsOptions), async (req, res) => {
+adminRouter.get('/mcp-servers', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -640,12 +653,12 @@ app.get('/api/mcp-servers', cors(corsOptions), async (req, res) => {
         });
     } catch (error) {
         console.error('获取MCP服务器列表失败:', error);
-        res.status(500).json({ error: '获取服务器列表失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // GET /api/mcp-servers/:id - 根据ID获取MCP服务器
-app.get('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+adminRouter.get('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -666,12 +679,12 @@ app.get('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
         res.json({ data: server });
     } catch (error) {
         console.error('获取MCP服务器失败:', error);
-        res.status(500).json({ error: '获取服务器失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // POST /api/mcp-servers - 创建MCP服务器
-app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (req, res) => {
+adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -756,12 +769,12 @@ app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (
         });
     } catch (error) {
         console.error('创建MCP服务器失败:', error);
-        res.status(500).json({ error: '创建服务器失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // PATCH /api/mcp-servers/:id - 更新MCP服务器
-app.patch('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+adminRouter.patch('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -932,12 +945,12 @@ app.patch('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
         });
     } catch (error) {
         console.error('更新MCP服务器失败:', error);
-        res.status(500).json({ error: '更新服务器失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // POST /api/mcp-servers/:id/groups - 添加服务器分组
-app.post('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) => {
+adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -996,12 +1009,12 @@ app.post('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) => {
         });
     } catch (error) {
         console.error('更新服务器分组失败:', error);
-        res.status(500).json({ error: '更新服务器分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // DELETE /api/mcp-servers/:id/groups - 移除服务器分组
-app.delete('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) => {
+adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1069,12 +1082,12 @@ app.delete('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) =>
         });
     } catch (error) {
         console.error('移除服务器分组失败:', error);
-        res.status(500).json({ error: '移除服务器分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // DELETE /api/mcp-servers/:id - 删除MCP服务器
-app.delete('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+adminRouter.delete('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1108,12 +1121,12 @@ app.delete('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
         });
     } catch (error) {
         console.error('删除MCP服务器失败:', error);
-        res.status(500).json({ error: '删除服务器失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // GET /api/mcp-groups - 获取所有分组
-app.get('/api/mcp-groups', cors(corsOptions), async (_req, res) => {
+adminRouter.get('/mcp-groups', async (_req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1130,12 +1143,12 @@ app.get('/api/mcp-groups', cors(corsOptions), async (_req, res) => {
         res.json({ data: rows.map(formatMcpGroupRow) });
     } catch (error) {
         console.error('获取分组列表失败:', error);
-        res.status(500).json({ error: '获取分组列表失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // GET /api/mcp-groups/:id - 获取分组详情
-app.get('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+adminRouter.get('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1159,12 +1172,12 @@ app.get('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
         res.json({ data: formatMcpGroupRow(row) });
     } catch (error) {
         console.error('获取分组失败:', error);
-        res.status(500).json({ error: '获取分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // POST /api/mcp-groups - 创建分组
-app.post('/api/mcp-groups', cors(corsOptions), async (req, res) => {
+adminRouter.post('/mcp-groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1206,12 +1219,12 @@ app.post('/api/mcp-groups', cors(corsOptions), async (req, res) => {
                 details: error.errors.map(e => e.message)
             });
         }
-        res.status(500).json({ error: '创建分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // PATCH /api/mcp-groups/:id - 更新分组
-app.patch('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+adminRouter.patch('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1286,12 +1299,12 @@ app.patch('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
                 details: error.errors.map(e => e.message)
             });
         }
-        res.status(500).json({ error: '更新分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
 });
 
 // DELETE /api/mcp-groups/:id - 删除分组
-app.delete('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
+adminRouter.delete('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -1313,8 +1326,22 @@ app.delete('/api/mcp-groups/:id', cors(corsOptions), async (req, res) => {
         res.json({ message: '分组删除成功' });
     } catch (error) {
         console.error('删除分组失败:', error);
-        res.status(500).json({ error: '删除分组失败', details: error.message });
+        res.status(500).json(maskError());
     }
+});
+
+app.use((err, _req, res, next) => {
+    if (err?.message === 'Not allowed by CORS') {
+        res.status(err.status || 403).json({ error: 'Origin not allowed.' });
+        return;
+    }
+
+    if (res.headersSent) {
+        return next(err);
+    }
+
+    console.error('未处理的服务端错误:', err);
+    res.status(err?.status || 500).json(maskError());
 });
 
 app.post('/mcp', cors(corsOptions), async (req, res) => {

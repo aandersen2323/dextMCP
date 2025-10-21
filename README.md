@@ -114,7 +114,7 @@ npm install
 
 ### 3. Configure Environment Variables
 - Copy `.env.example` to `.env`
-- Fill in the variables from the table below
+- Fill in the variables from the table below (at minimum set `EMBEDDING_API_KEY` and a strong `ADMIN_API_KEY`)
 
 | Variable | Description | Default | Required |
 | -------- | ----------- | ------- | -------- |
@@ -126,6 +126,12 @@ npm install
 | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3000` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | Default number of tools returned by `retriever` | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | Minimum similarity threshold | `0.1` | ❌ |
+| `ADMIN_API_KEY` | Secret required to access `/api` administration endpoints | - | ✅ |
+| `ALLOW_UNAUTHENTICATED_API` | Set to `true` to bypass API key checks (development only) | `false` | ❌ |
+| `ALLOWED_ORIGINS` | Comma separated CORS allowlist | `http://localhost:3000` | ❌ |
+| `ADMIN_RATE_LIMIT_WINDOW_MS` | Rate limiting window for admin API (milliseconds) | `60000` | ❌ |
+| `ADMIN_RATE_LIMIT_MAX` | Maximum requests per window per client IP | `120` | ❌ |
+| `VECTORIZE_CONCURRENCY` | Number of parallel workers used when embedding tools | `4` | ❌ |
 
 ### 4. Start Service
 
@@ -137,23 +143,23 @@ The system will:
 - Initialize the SQLite database with MCP server configurations
 - Load 12 pre-configured MCP servers from the database
 - Start the local MCP server at `http://localhost:3000/mcp`
-- Provide RESTful API at `http://localhost:3000/api/mcp-servers`
+- Provide a secured RESTful API at `http://localhost:3000/api/...` (requires `ADMIN_API_KEY`)
 
 ## MCP Server & Group Management API
 
 ### RESTful API Endpoints
 
-All MCP server configurations are managed through RESTful API (responses include a `group_names` array showing current memberships):
+All MCP server configurations are managed through RESTful API (responses include a `group_names` array showing current memberships). Supply the `x-api-key` header (value: `ADMIN_API_KEY`) with every request. Requests that exceed the configured rate limits return `429 Too Many Requests`.
 
 #### Get All Servers
 ```bash
-curl http://localhost:3000/api/mcp-servers
-curl "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers
+curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
 ```
 
 #### Get Specific Server
 ```bash
-curl http://localhost:3000/api/mcp-servers/1
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 ```
 
 #### Create New Server
@@ -161,6 +167,7 @@ curl http://localhost:3000/api/mcp-servers/1
 # STDIO Server
 curl -X POST http://localhost:3000/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-stdio-server",
     "server_type": "stdio",
@@ -173,6 +180,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 # HTTP Server
 curl -X POST http://localhost:3000/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-http-server",
     "server_type": "http",
@@ -189,6 +197,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 ```bash
 curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "description": "Updated description",
     "enabled": false,
@@ -200,6 +209,7 @@ curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
 ```bash
 curl -X POST http://localhost:3000/api/mcp-servers/1/groups \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "group_names": ["devtools", "docs"]
   }'
@@ -209,6 +219,7 @@ curl -X POST http://localhost:3000/api/mcp-servers/1/groups \
 ```bash
 curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "group_names": ["docs"]
   }'
@@ -216,7 +227,8 @@ curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
 
 #### Delete Server
 ```bash
-curl -X DELETE http://localhost:3000/api/mcp-servers/1
+curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
+  -H "x-api-key: $ADMIN_API_KEY"
 ```
 
 ### Group Management
@@ -225,11 +237,12 @@ Use the following endpoints to organize MCP servers into named groups:
 
 ```bash
 # List all groups with server counts
-curl http://localhost:3000/api/mcp-groups
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-groups
 
 # Create a new group
 curl -X POST http://localhost:3000/api/mcp-groups \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "group_name": "devtools",
     "description": "Developer tooling servers"
@@ -238,13 +251,21 @@ curl -X POST http://localhost:3000/api/mcp-groups \
 # Update a group
 curl -X PATCH http://localhost:3000/api/mcp-groups/1 \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "description": "Updated description"
   }'
 
 # Delete a group
-curl -X DELETE http://localhost:3000/api/mcp-groups/1
+curl -X DELETE http://localhost:3000/api/mcp-groups/1 \
+  -H "x-api-key: $ADMIN_API_KEY"
 ```
+
+### Security Hardening
+
+- **API key authentication**: Set `ADMIN_API_KEY` and include it as the `x-api-key` header for every `/api` request. Set `ALLOW_UNAUTHENTICATED_API=true` only for local experiments.
+- **Rate limiting**: Adjust `ADMIN_RATE_LIMIT_WINDOW_MS` and `ADMIN_RATE_LIMIT_MAX` to throttle abusive clients. When the limit is exceeded the server returns HTTP 429.
+- **CORS allowlist**: Restrict browser access to trusted front-ends by configuring `ALLOWED_ORIGINS` (comma separated list). Requests from other origins are rejected with HTTP 403.
 
 ### Database Schema
 

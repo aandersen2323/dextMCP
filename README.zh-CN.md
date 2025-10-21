@@ -113,7 +113,7 @@ npm install
 
 ### 3. 配置环境变量
 - 复制 `.env.example` 为 `.env`
-- 按需填写下表中的变量
+- 按需填写下表中的变量（至少配置 `EMBEDDING_API_KEY` 和一个足够复杂的 `ADMIN_API_KEY`）
 
 | 变量名 | 说明 | 默认值 | 必需 |
 | ------ | ---- | ------ | ---- |
@@ -125,6 +125,12 @@ npm install
 | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3000` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | `retriever` 默认返回的工具数量 | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | 最低相似度阈值 | `0.1` | ❌ |
+| `ADMIN_API_KEY` | 访问 `/api` 管理端点所需的密钥 | - | ✅ |
+| `ALLOW_UNAUTHENTICATED_API` | 设为 `true` 可跳过密钥校验（仅限本地调试） | `false` | ❌ |
+| `ALLOWED_ORIGINS` | 允许的 CORS 来源列表（逗号分隔） | `http://localhost:3000` | ❌ |
+| `ADMIN_RATE_LIMIT_WINDOW_MS` | 管理 API 限流窗口（毫秒） | `60000` | ❌ |
+| `ADMIN_RATE_LIMIT_MAX` | 每个客户端在窗口内允许的请求数 | `120` | ❌ |
+| `VECTORIZE_CONCURRENCY` | 工具向量化并发工作数 | `4` | ❌ |
 
 ### 4. 启动服务
 
@@ -136,23 +142,23 @@ npm start
 - 初始化包含 MCP 服务器配置的 SQLite 数据库
 - 从数据库加载 12 个预配置的 MCP 服务器
 - 在 `http://localhost:3000/mcp` 启动本地 MCP 服务器
-- 在 `http://localhost:3000/api/mcp-servers` 提供 RESTful API
+- 在 `http://localhost:3000/api/...` 提供需要 `ADMIN_API_KEY` 的安全 RESTful API
 
 ## MCP 服务器管理 API
 
 ### RESTful API 端点
 
-所有 MCP 服务器配置都通过 RESTful API 进行管理：
+所有 MCP 服务器配置都通过 RESTful API 进行管理。每个请求必须携带 `x-api-key` 请求头，其值为配置的 `ADMIN_API_KEY`，否则服务器会返回 `401 Unauthorized`。触发限流时会返回 `429 Too Many Requests`。
 
 #### 获取所有服务器
 ```bash
-curl http://localhost:3000/api/mcp-servers
-curl "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers
+curl -H "x-api-key: $ADMIN_API_KEY" "http://localhost:3000/api/mcp-servers?enabled=true&server_type=http"
 ```
 
 #### 获取特定服务器
 ```bash
-curl http://localhost:3000/api/mcp-servers/1
+curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 ```
 
 #### 创建新服务器
@@ -160,6 +166,7 @@ curl http://localhost:3000/api/mcp-servers/1
 # STDIO 服务器
 curl -X POST http://localhost:3000/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-stdio-server",
     "server_type": "stdio",
@@ -171,6 +178,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 # HTTP 服务器
 curl -X POST http://localhost:3000/api/mcp-servers \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "server_name": "my-http-server",
     "server_type": "http",
@@ -184,8 +192,9 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 
 #### 更新服务器
 ```bash
-curl -X PUT http://localhost:3000/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
     "description": "更新后的描述",
     "enabled": false
@@ -194,8 +203,15 @@ curl -X PUT http://localhost:3000/api/mcp-servers/1 \
 
 #### 删除服务器
 ```bash
-curl -X DELETE http://localhost:3000/api/mcp-servers/1
+curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
+  -H "x-api-key: $ADMIN_API_KEY"
 ```
+
+### 安全加固
+
+- **API 密钥认证**：设置 `ADMIN_API_KEY` 并在每个 `/api` 请求中通过 `x-api-key` 头部发送。`ALLOW_UNAUTHENTICATED_API=true` 仅建议在本地调试时使用。
+- **限流配置**：通过 `ADMIN_RATE_LIMIT_WINDOW_MS` 与 `ADMIN_RATE_LIMIT_MAX` 控制访问频率，超过阈值会得到 429 响应。
+- **CORS 白名单**：在 `ALLOWED_ORIGINS` 中配置受信任的前端来源，未列出的来源会收到 403。
 
 ### 数据库架构
 
