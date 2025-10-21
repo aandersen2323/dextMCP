@@ -1,6 +1,29 @@
 // 向量搜索和工具推荐模块 (使用sqlite-vec)
 import VectorDatabase from './database.js';
-import { vectorizeString } from './index.js';
+import { vectorizeString } from './lib/embedding.js';
+import { createChildLogger } from './observability.js';
+
+async function runWithConcurrency(items, limit, handler) {
+    const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
+    let index = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length || 0) }, async () => {
+        while (true) {
+            const currentIndex = index;
+            index += 1;
+
+            if (currentIndex >= items.length) {
+                break;
+            }
+
+            await handler(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+}
+
+const vectorLogger = createChildLogger({ module: 'vector-search' });
 
 async function runWithConcurrency(items, limit, handler) {
     const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
@@ -35,9 +58,9 @@ class VectorSearch {
         try {
             await this.db.initialize();
             this.isInitialized = true;
-            console.log('🔍 向量搜索引擎初始化成功 (使用better-sqlite3 + sqlite-vec)');
+            vectorLogger.info('🔍 向量搜索引擎初始化成功 (使用better-sqlite3 + sqlite-vec)');
         } catch (error) {
-            console.error('❌ 向量搜索引擎初始化失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 向量搜索引擎初始化失败');
             throw error;
         }
     }
@@ -58,25 +81,25 @@ class VectorSearch {
             }
 
             const serverInfo = serverNames && serverNames.length > 0 ? ` (服务器过滤: ${serverNames.join(', ')})` : '';
-            console.log(`🔍 开始搜索: "${query}" (模型: ${modelName}, topK: ${topK}${serverInfo})`);
+            vectorLogger.info(`🔍 开始搜索: "${query}" (模型: ${modelName}, topK: ${topK}${serverInfo})`);
 
             // 1. 将查询文本向量化
             const queryVector = await vectorizeString(query);
-            console.log(`📊 查询向量维度: ${queryVector.length}`);
+            vectorLogger.info(`📊 查询向量维度: ${queryVector.length}`);
 
             // 2. 使用sqlite-vec进行高效的向量相似性搜索
             const results = await this.db.searchSimilarVectors(queryVector, topK, threshold, serverNames);
 
             if (results.length === 0) {
-                console.log('⚠️  没有找到满足条件的相似工具');
+                vectorLogger.info('⚠️  没有找到满足条件的相似工具');
                 return [];
             }
 
-            console.log(`✅ 搜索完成，找到 ${results.length} 个相似工具 (阈值: ${threshold})`);
+            vectorLogger.info(`✅ 搜索完成，找到 ${results.length} 个相似工具 (阈值: ${threshold})`);
 
             // 输出详细结果
             results.forEach((result, index) => {
-                console.log(`${index + 1}. ${result.tool_name} (相似度: ${result.similarity.toFixed(4)}, 距离: ${result.distance.toFixed(4)})`);
+                vectorLogger.info(`${index + 1}. ${result.tool_name} (相似度: ${result.similarity.toFixed(4)}, 距离: ${result.distance.toFixed(4)})`);
             });
 
             return results.map(result => ({
@@ -90,7 +113,7 @@ class VectorSearch {
             }));
 
         } catch (error) {
-            console.error('❌ 搜索相似工具失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 搜索相似工具失败');
             throw error;
         }
     }
@@ -107,11 +130,11 @@ class VectorSearch {
                 throw new Error('MCP客户端未提供');
             }
 
-            console.log('🔄 从MCP客户端获取当前可用工具...');
+            vectorLogger.info('🔄 从MCP客户端获取当前可用工具...');
             
             // 获取当前所有可用的MCP工具
             const availableTools = await mcpClient.getTools();
-            console.log(`📋 当前可用工具数量: ${availableTools.length}`);
+            vectorLogger.info(`📋 当前可用工具数量: ${availableTools.length}`);
 
             const matchedTools = [];
 
@@ -132,17 +155,17 @@ class VectorSearch {
                             description: description
                         });
                         
-                        console.log(`✅ 找到匹配工具: ${toolName} (相似度: ${similarTool.similarity.toFixed(4)})`);
+                        vectorLogger.info(`✅ 找到匹配工具: ${toolName} (相似度: ${similarTool.similarity.toFixed(4)})`);
                         break;
                     }
                 }
             }
 
-            console.log(`🎯 总共匹配到 ${matchedTools.length} 个可用工具`);
+            vectorLogger.info(`🎯 总共匹配到 ${matchedTools.length} 个可用工具`);
             return matchedTools;
 
         } catch (error) {
-            console.error('❌ 查找匹配MCP工具失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 查找匹配MCP工具失败');
             throw error;
         }
     }
@@ -168,9 +191,9 @@ class VectorSearch {
                 groupNames = null
             } = options;
 
-            console.log(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
-            console.log(`📝 查询: "${query}"`);
-            console.log(`🔧 模型: ${defaultModelName}`);
+            vectorLogger.info(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
+            vectorLogger.info(`📝 查询: "${query}"`);
+            vectorLogger.info(`🔧 模型: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
             const groupInfo = groupNames && groupNames.length > 0 ? `, 分组过滤: ${groupNames.join(', ')}` : '';
             console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
@@ -201,7 +224,7 @@ class VectorSearch {
             const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, effectiveServerNames);
 
             if (similarTools.length === 0) {
-                console.log('⚠️  未找到相似的工具');
+                vectorLogger.info('⚠️  未找到相似的工具');
                 return [];
             }
 
@@ -226,12 +249,12 @@ class VectorSearch {
                 return result;
             });
 
-            console.log(`🎉 工具推荐完成，返回 ${recommendations.length} 个推荐结果`);
+            vectorLogger.info(`🎉 工具推荐完成，返回 ${recommendations.length} 个推荐结果`);
 
             return recommendations;
 
         } catch (error) {
-            console.error('❌ 工具推荐失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 工具推荐失败');
             throw error;
         }
     }
@@ -246,12 +269,12 @@ class VectorSearch {
         try {
             const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
             
-            console.log('📊 开始为MCP工具建立向量索引 (使用sqlite-vec)...');
-            console.log(`🔧 使用模型: ${defaultModelName}`);
+            vectorLogger.info('📊 开始为MCP工具建立向量索引 (使用sqlite-vec)...');
+            vectorLogger.info(`🔧 使用模型: ${defaultModelName}`);
 
             // 获取所有MCP工具
             const tools = await mcpClient.getTools();
-            console.log(`📋 获取到 ${tools.length} 个MCP工具`);
+            vectorLogger.info(`📋 获取到 ${tools.length} 个MCP工具`);
 
             const toolsToVectorize = [];
 
@@ -271,17 +294,17 @@ class VectorSearch {
                             originalTool: tool
                         });
                     } else {
-                        console.log(`⏭️  跳过已存在的工具: ${toolName}`);
+                        vectorLogger.info(`⏭️  跳过已存在的工具: ${toolName}`);
                     }
                 }
             }
 
             if (toolsToVectorize.length === 0) {
-                console.log('✅ 所有工具都已建立索引，无需重复处理');
+                vectorLogger.info('✅ 所有工具都已建立索引，无需重复处理');
                 return [];
             }
 
-            console.log(`🎯 准备向量化 ${toolsToVectorize.length} 个新工具`);
+            vectorLogger.info(`🎯 准备向量化 ${toolsToVectorize.length} 个新工具`);
 
             // 向量化并检查相似工具
             const vectorizedTools = [];
@@ -319,20 +342,20 @@ class VectorSearch {
                                     );
                                     if (deletedCount > 0) {
                                         deletedToolsCount.total += deletedCount;
-                                        console.log(`🗑️  已删除相似工具: ${oldTool.tool_name} (相似度: ${oldTool.similarity.toFixed(4)})`);
+                                        vectorLogger.info(`🗑️  已删除相似工具: ${oldTool.tool_name} (相似度: ${oldTool.similarity.toFixed(4)})`);
                                     }
                                 } catch (deleteError) {
-                                    console.warn(`⚠️  删除工具失败 "${oldTool.tool_name}": ${deleteError.message}`);
+                                    vectorLogger.warn(`⚠️  删除工具失败 "${oldTool.tool_name}": ${deleteError.message}`);
                                 }
                             }
 
                             if (toDelete.length > 0) {
-                                console.log(`✅ 为新工具 "${tool.toolName}" 清理了 ${toDelete.length} 个相似的旧工具`);
+                                vectorLogger.info(`✅ 为新工具 "${tool.toolName}" 清理了 ${toDelete.length} 个相似的旧工具`);
                             }
                         }
 
                     } catch (searchError) {
-                        console.warn(`⚠️  搜索相似工具失败 "${tool.toolName}": ${searchError.message}`);
+                        vectorLogger.warn(`⚠️  搜索相似工具失败 "${tool.toolName}": ${searchError.message}`);
                     }
 
                     vectorizedTools.push({
@@ -342,23 +365,23 @@ class VectorSearch {
                     });
 
                 } catch (error) {
-                    console.warn(`⚠️  跳过工具 "${tool.toolName}": ${error.message}`);
+                    vectorLogger.warn(`⚠️  跳过工具 "${tool.toolName}": ${error.message}`);
                 }
             });
 
             // 批量保存到数据库
             const saveResults = await this.db.saveToolVectorsBatch(vectorizedTools, defaultModelName);
             
-            console.log(`✅ 向量索引建立完成 (使用sqlite-vec):`);
-            console.log(`   - 总工具数: ${tools.length}`);
-            console.log(`   - 新增向量化: ${vectorizedTools.length}`);
-            console.log(`   - 保存到数据库: ${saveResults.length}`);
-            console.log(`   - 删除相似工具: ${deletedToolsCount.total}`);
+            vectorLogger.info(`✅ 向量索引建立完成 (使用sqlite-vec):`);
+            vectorLogger.info(`   - 总工具数: ${tools.length}`);
+            vectorLogger.info(`   - 新增向量化: ${vectorizedTools.length}`);
+            vectorLogger.info(`   - 保存到数据库: ${saveResults.length}`);
+            vectorLogger.info(`   - 删除相似工具: ${deletedToolsCount.total}`);
 
             return saveResults;
 
         } catch (error) {
-            console.error('❌ 建立MCP工具向量索引失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 建立MCP工具向量索引失败');
             throw error;
         }
     }
@@ -414,26 +437,26 @@ class VectorSearch {
     identifySimilarToolsToDelete(newToolName, newDescription, similarTools, similarityThreshold = 0.96) {
         const toDelete = [];
         
-        console.log(`🔍 检查 ${similarTools.length} 个相似工具是否需要删除 (阈值: ${similarityThreshold})`);
+        vectorLogger.info(`🔍 检查 ${similarTools.length} 个相似工具是否需要删除 (阈值: ${similarityThreshold})`);
         
         for (const similar of similarTools) {
             const vectorSimilarity = similar.similarity;
             const nameSimilarity = this.calculateNameSimilarity(newToolName, similar.tool_name);
             
-            console.log(`📊 工具 "${similar.tool_name}":`);
-            console.log(`   - 向量相似度: ${vectorSimilarity.toFixed(4)}`);
-            console.log(`   - 名称相似度: ${nameSimilarity.toFixed(4)}`);
+            vectorLogger.info(`📊 工具 "${similar.tool_name}":`);
+            vectorLogger.info(`   - 向量相似度: ${vectorSimilarity.toFixed(4)}`);
+            vectorLogger.info(`   - 名称相似度: ${nameSimilarity.toFixed(4)}`);
             
             // 判断逻辑：向量相似度 >= 0.96 则认为是非常相似的工具
             if (vectorSimilarity >= similarityThreshold) {
-                console.log(`🎯 判定为非常相似工具，将被删除: ${similar.tool_name}`);
+                vectorLogger.info(`🎯 判定为非常相似工具，将被删除: ${similar.tool_name}`);
                 toDelete.push(similar);
             } else {
-                console.log(`✅ 保留工具: ${similar.tool_name} (相似度未达到阈值)`);
+                vectorLogger.info(`✅ 保留工具: ${similar.tool_name} (相似度未达到阈值)`);
             }
         }
         
-        console.log(`🗑️  总共需要删除 ${toDelete.length} 个相似工具`);
+        vectorLogger.info(`🗑️  总共需要删除 ${toDelete.length} 个相似工具`);
         return toDelete;
     }
 
@@ -459,7 +482,7 @@ class VectorSearch {
             return results;
 
         } catch (error) {
-            console.error('❌ 搜索相似工具失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 搜索相似工具失败');
             throw error;
         }
     }
@@ -476,7 +499,7 @@ class VectorSearch {
                 engine: 'sqlite-vec'
             };
         } catch (error) {
-            console.error('❌ 获取搜索统计信息失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 获取搜索统计信息失败');
             throw error;
         }
     }
@@ -490,18 +513,17 @@ class VectorSearch {
         try {
             const defaultModelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
             
-            console.log(`🗑️  清理向量索引: ${defaultModelName}`);
+            vectorLogger.info(`🗑️  清理向量索引: ${defaultModelName}`);
             
             // 这里需要清理向量表中的数据
             // 由于sqlite-vec的限制，我们需要重新创建表
             await this.db.run('DELETE FROM vec_tool_embeddings');
-            await this.db.run('DELETE FROM tool_mapping');
             await this.db.run('DELETE FROM tool_vectors WHERE model_name = ?', [defaultModelName]);
             
-            console.log('✅ 向量索引清理完成');
+            vectorLogger.info('✅ 向量索引清理完成');
             
         } catch (error) {
-            console.error('❌ 清理向量索引失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 清理向量索引失败');
             throw error;
         }
     }
@@ -513,9 +535,9 @@ class VectorSearch {
         try {
             await this.db.close();
             this.isInitialized = false;
-            console.log('✅ 向量搜索引擎已关闭');
+            vectorLogger.info('✅ 向量搜索引擎已关闭');
         } catch (error) {
-            console.error('❌ 关闭向量搜索引擎失败:', error.message);
+            vectorLogger.error({ err: error }, '❌ 关闭向量搜索引擎失败');
             throw error;
         }
     }

@@ -84,7 +84,12 @@ graph TB
 ## 项目结构
 
 ```
-├── index.js                  # 入口：初始化 MCP 客户端、向量测试、启动服务端
+├── index.js                  # 入口：负责引导 MCP 客户端并启动服务
+├── lib/
+│   ├── embedding.js          # 向量化相关的通用工具函数
+│   └── mcpClient.js          # MCP 客户端初始化与环境变量占位符解析
+├── scripts/
+│   └── diagnostics.js        # 可选的诊断脚本，用于验证向量化与搜索流程
 ├── mcp-server.js             # 本地 MCP 服务端 (Express + MCP SDK) + RESTful API
 ├── vector_search.js          # 工具向量化与检索逻辑
 ├── database.js               # SQLite + sqlite-vec 管理器
@@ -123,6 +128,7 @@ npm install
 | `EMBEDDING_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
 | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3000` | ❌ |
+| `TOOLS_DB_PATH` | 自定义 SQLite 数据库文件路径 | `<project>/tools_vector.db` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | `retriever` 默认返回的工具数量 | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | 最低相似度阈值 | `0.1` | ❌ |
 | `ADMIN_API_KEY` | 访问 `/api` 管理端点所需的密钥 | - | ✅ |

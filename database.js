@@ -2,15 +2,21 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { createChildLogger } from './observability.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // 数据库文件路径
-const DB_PATH = join(__dirname, 'tools_vector.db');
+const dbPathFromEnv = process.env.TOOLS_DB_PATH;
+const DB_PATH = dbPathFromEnv
+    ? (isAbsolute(dbPathFromEnv) ? dbPathFromEnv : join(process.cwd(), dbPathFromEnv))
+    : join(__dirname, 'tools_vector.db');
+
+const dbLogger = createChildLogger({ module: 'database' });
 
 class VectorDatabase {
     constructor() {
@@ -31,12 +37,12 @@ class VectorDatabase {
             // 执行建表语句
             this.createTables();
             
-            console.log('✅ 数据库初始化成功 (使用better-sqlite3 + sqlite-vec)');
-            console.log(`📁 数据库文件路径: ${DB_PATH}`);
+            dbLogger.info('✅ 数据库初始化成功 (使用better-sqlite3 + sqlite-vec)');
+            dbLogger.info(`📁 数据库文件路径: ${DB_PATH}`);
             
             return true;
         } catch (error) {
-            console.error('❌ 数据库初始化失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 数据库初始化失败');
             throw error;
         }
     }
@@ -47,9 +53,9 @@ class VectorDatabase {
     loadVectorExtension() {
         try {
             sqliteVec.load(this.db);
-            console.log('✅ sqlite-vec扩展加载成功');
+            dbLogger.info('✅ sqlite-vec扩展加载成功');
         } catch (error) {
-            console.error('❌ 加载sqlite-vec扩展失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 加载sqlite-vec扩展失败');
             throw error;
         }
     }
@@ -90,13 +96,13 @@ class VectorDatabase {
             
             // 执行所有SQL语句
             for (const statement of statements) {
-                console.log(`📝 执行SQL: ${statement.substring(0, 50)}...`);
+                dbLogger.info(`📝 执行SQL: ${statement.substring(0, 50)}...`);
                 this.db.exec(statement);
             }
             
-            console.log('📋 数据库表创建成功');
+            dbLogger.info('📋 数据库表创建成功');
         } catch (error) {
-            console.error('❌ 创建数据库表失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 创建数据库表失败');
             throw error;
         }
     }
@@ -135,31 +141,27 @@ class VectorDatabase {
                 const updateStmt = this.db.prepare('UPDATE tool_vectors SET tool_name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
                 updateStmt.run(toolName, description, existing.id);
                 toolId = existing.id;
-                console.log(`🔄 更新工具向量: ${toolName} (ID: ${toolId})`);
+                dbLogger.info(`🔄 更新工具向量: ${toolName} (ID: ${toolId})`);
             } else {
                 // 插入新记录
                 const insertStmt = this.db.prepare('INSERT INTO tool_vectors (tool_md5, model_name, tool_name, description) VALUES (?, ?, ?, ?)');
                 const result = insertStmt.run(toolMD5, modelName, toolName, description);
                 toolId = result.lastInsertRowid;
-                console.log(`✅ 保存工具元数据: ${toolName} (ID: ${toolId})`);
+                dbLogger.info(`✅ 保存工具元数据: ${toolName} (ID: ${toolId})`);
             }
 
-            // 将向量插入到vec_tool_embeddings表中
+            // 将向量存储到vec_tool_embeddings表中，使用工具ID作为rowid
             const vectorFloat32 = new Float32Array(vector);
-            const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(tool_vector) VALUES (?)');
-            const vecResult = vecInsertStmt.run(vectorFloat32);
+            const deleteExistingVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
+            deleteExistingVecStmt.run(toolId);
+            const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(rowid, tool_vector) VALUES (?, ?)');
+            vecInsertStmt.run(toolId, vectorFloat32);
 
-            const vecRowId = vecResult.lastInsertRowid;
-
-            // 在映射表中建立关联
-            const mappingStmt = this.db.prepare('INSERT OR REPLACE INTO tool_mapping (rowid, tool_id) VALUES (?, ?)');
-            mappingStmt.run(vecRowId, toolId);
-
-            console.log(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${vecRowId}, 维度: ${vector.length})`);
+            dbLogger.info(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${toolId}, 维度: ${vector.length})`);
 
             return toolId;
         } catch (error) {
-            console.error(`❌ 保存工具向量失败 (${toolName}):`, error.message);
+            dbLogger.error({ err: error, toolName }, '❌ 保存工具向量失败');
             throw error;
         }
     }
@@ -186,10 +188,10 @@ class VectorDatabase {
             // 执行事务
             transaction(toolsData);
             
-            console.log(`✅ 批量保存完成: ${toolsData.length} 个工具向量`);
+            dbLogger.info(`✅ 批量保存完成: ${toolsData.length} 个工具向量`);
             return results;
         } catch (error) {
-            console.error('❌ 批量保存工具向量失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 批量保存工具向量失败');
             throw error;
         }
     }
@@ -225,8 +227,7 @@ class VectorDatabase {
                         (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
                         tv.created_at
                     FROM vec_tool_embeddings vte
-                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
-                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    JOIN tool_vectors tv ON tv.id = vte.rowid
                     WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
                     AND (${serverConditions})
                     ORDER BY distance ASC
@@ -248,8 +249,7 @@ class VectorDatabase {
                         (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
                         tv.created_at
                     FROM vec_tool_embeddings vte
-                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
-                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    JOIN tool_vectors tv ON tv.id = vte.rowid
                     WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
                     ORDER BY distance ASC
                     LIMIT ?
@@ -262,14 +262,14 @@ class VectorDatabase {
             const results = stmt.all(...params);
 
             if (serverNames && serverNames.length > 0) {
-                console.log(`📊 向量搜索完成，找到 ${results.length} 个相似工具 (服务器过滤: ${serverNames.join(', ')})`);
+                dbLogger.info(`📊 向量搜索完成，找到 ${results.length} 个相似工具 (服务器过滤: ${serverNames.join(', ')})`);
             } else {
-                console.log(`📊 向量搜索完成，找到 ${results.length} 个相似工具`);
+                dbLogger.info(`📊 向量搜索完成，找到 ${results.length} 个相似工具`);
             }
 
             return results;
         } catch (error) {
-            console.error('❌ 向量相似性搜索失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 向量相似性搜索失败');
             throw error;
         }
     }
@@ -286,7 +286,7 @@ class VectorDatabase {
             const row = stmt.get(toolMD5, modelName);
             return row || null;
         } catch (error) {
-            console.error('❌ 根据MD5查询工具失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 根据MD5查询工具失败');
             throw error;
         }
     }
@@ -319,19 +319,8 @@ class VectorDatabase {
 
                 // 2. 删除映射关系和向量数据
                 for (const toolId of toolIds) {
-                    // 查找映射的向量行
-                    const mappingStmt = this.db.prepare('SELECT rowid FROM tool_mapping WHERE tool_id = ?');
-                    const mappings = mappingStmt.all(toolId);
-                    
-                    // 删除向量数据
-                    for (const mapping of mappings) {
-                        const deleteVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
-                        deleteVecStmt.run(mapping.rowid);
-                    }
-                    
-                    // 删除映射关系
-                    const deleteMappingStmt = this.db.prepare('DELETE FROM tool_mapping WHERE tool_id = ?');
-                    deleteMappingStmt.run(toolId);
+                    const deleteVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
+                    deleteVecStmt.run(toolId);
                 }
 
                 // 3. 删除工具元数据
@@ -349,10 +338,20 @@ class VectorDatabase {
 
             const deletedCount = transaction();
             
-            console.log(`🗑️  删除工具向量: ${toolMD5} (删除数量: ${deletedCount})`);
+            dbLogger.info(`🗑️  删除工具向量: ${toolMD5} (删除数量: ${deletedCount})`);
             return deletedCount;
         } catch (error) {
-            console.error('❌ 删除工具向量失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 删除工具向量失败');
+            throw error;
+        }
+    }
+
+    run(sql, params = []) {
+        try {
+            const stmt = this.db.prepare(sql);
+            return stmt.run(...params);
+        } catch (error) {
+            dbLogger.error({ err: error, sql }, '❌ 执行SQL失败');
             throw error;
         }
     }
@@ -383,10 +382,72 @@ class VectorDatabase {
                 modelStats: modelStats
             };
             
-            console.log('📊 数据库统计信息:', stats);
+            dbLogger.info('📊 数据库统计信息:', stats);
             return stats;
         } catch (error) {
-            console.error('❌ 获取统计信息失败:', error.message);
+            dbLogger.error({ err: error }, '❌ 获取统计信息失败');
+            throw error;
+        }
+    }
+
+    /**
+     * 获取服务器所属的分组名称列表
+     * @param {number} serverId - MCP服务器ID
+     * @returns {Array<string>} 分组名称列表
+     */
+    getGroupNamesForServer(serverId) {
+        try {
+            const stmt = this.db.prepare(`
+                SELECT g.group_name
+                FROM mcp_server_groups msg
+                JOIN mcp_groups g ON g.id = msg.group_id
+                WHERE msg.server_id = ?
+                ORDER BY g.group_name
+            `);
+
+            const rows = stmt.all(serverId);
+            return rows.map(row => row.group_name);
+        } catch (error) {
+            dbLogger.error({ err: error }, '❌ 获取服务器分组失败');
+            throw error;
+        }
+    }
+
+    /**
+     * 根据分组名称获取服务器名称列表
+     * @param {Array<string>} groupNames - 分组名称列表
+     * @param {Object} options - 选项
+     * @param {boolean} options.enabledOnly - 是否仅返回启用的服务器
+     * @returns {Array<string>} 服务器名称列表
+     */
+    getServerNamesForGroups(groupNames, { enabledOnly = true } = {}) {
+        try {
+            if (!Array.isArray(groupNames) || groupNames.length === 0) {
+                return [];
+            }
+
+            const placeholders = groupNames.map(() => '?').join(', ');
+            let sql = `
+                SELECT DISTINCT ms.server_name
+                FROM mcp_groups g
+                JOIN mcp_server_groups msg ON g.id = msg.group_id
+                JOIN mcp_servers ms ON ms.id = msg.server_id
+                WHERE g.group_name IN (${placeholders})
+            `;
+
+            if (enabledOnly) {
+                sql += ' AND ms.enabled = 1';
+            }
+
+            sql += ' ORDER BY ms.server_name';
+
+            const stmt = this.db.prepare(sql);
+            const rows = stmt.all(...groupNames);
+
+            const serverNames = rows.map(row => row.server_name);
+            return Array.from(new Set(serverNames));
+        } catch (error) {
+            dbLogger.error({ err: error }, '❌ 根据分组获取服务器失败');
             throw error;
         }
     }
@@ -467,10 +528,10 @@ class VectorDatabase {
                 ORDER BY retrieved_at DESC
             `);
             const results = stmt.all(sessionId);
-            console.log(`📋 获取session ${sessionId} 的历史记录: ${results.length} 个工具`);
+            dbLogger.info(`📋 获取session ${sessionId} 的历史记录: ${results.length} 个工具`);
             return results;
         } catch (error) {
-            console.error('❌ 获取session历史记录失败:', error.message);
+            dbLogger.error({ err: error, sessionId }, '❌ 获取session历史记录失败');
             throw error;
         }
     }
@@ -491,7 +552,7 @@ class VectorDatabase {
             const result = stmt.get(sessionId, toolMD5);
             return result.count > 0;
         } catch (error) {
-            console.error('❌ 检查工具检索状态失败:', error.message);
+            dbLogger.error({ err: error, sessionId, toolMD5 }, '❌ 检查工具检索状态失败');
             throw error;
         }
     }
@@ -511,14 +572,14 @@ class VectorDatabase {
             `);
             const result = stmt.run(sessionId, toolMD5, toolName);
             if (result.changes > 0) {
-                console.log(`✅ 记录session工具检索: ${sessionId} -> ${toolName} (MD5: ${toolMD5})`);
+                dbLogger.info(`✅ 记录session工具检索: ${sessionId} -> ${toolName} (MD5: ${toolMD5})`);
                 return result.lastInsertRowid;
             } else {
-                console.log(`⚠️ 工具已存在，跳过记录: ${sessionId} -> ${toolName}`);
+                dbLogger.info(`⚠️ 工具已存在，跳过记录: ${sessionId} -> ${toolName}`);
                 return null;
             }
         } catch (error) {
-            console.error('❌ 记录session工具检索失败:', error.message);
+            dbLogger.error({ err: error, sessionId, toolMD5, toolName }, '❌ 记录session工具检索失败');
             throw error;
         }
     }
@@ -547,10 +608,10 @@ class VectorDatabase {
             // 执行事务
             transaction(sessionId, tools);
 
-            console.log(`✅ 批量记录session工具检索完成: ${sessionId} -> ${results.length} 个新工具`);
+            dbLogger.info(`✅ 批量记录session工具检索完成: ${sessionId} -> ${results.length} 个新工具`);
             return results;
         } catch (error) {
-            console.error('❌ 批量记录session工具检索失败:', error.message);
+            dbLogger.error({ err: error, sessionId, toolsCount: tools?.length }, '❌ 批量记录session工具检索失败');
             throw error;
         }
     }
@@ -564,10 +625,10 @@ class VectorDatabase {
         try {
             const stmt = this.db.prepare('DELETE FROM session_tool_history WHERE session_id = ?');
             const result = stmt.run(sessionId);
-            console.log(`🗑️ 清理session历史记录: ${sessionId} (删除数量: ${result.changes})`);
+            dbLogger.info(`🗑️ 清理session历史记录: ${sessionId} (删除数量: ${result.changes})`);
             return result.changes;
         } catch (error) {
-            console.error('❌ 清理session历史记录失败:', error.message);
+            dbLogger.error({ err: error, sessionId }, '❌ 清理session历史记录失败');
             throw error;
         }
     }
@@ -599,7 +660,7 @@ class VectorDatabase {
                 latest_retrieval: latestResult.latest_retrieval
             };
         } catch (error) {
-            console.error('❌ 获取session统计信息失败:', error.message);
+            dbLogger.error({ err: error, sessionId }, '❌ 获取session统计信息失败');
             throw error;
         }
     }
@@ -611,9 +672,9 @@ class VectorDatabase {
         if (this.db) {
             try {
                 this.db.close();
-                console.log('✅ 数据库连接已关闭');
+                dbLogger.info('✅ 数据库连接已关闭');
             } catch (error) {
-                console.error('❌ 关闭数据库失败:', error.message);
+                dbLogger.error({ err: error }, '❌ 关闭数据库失败');
                 throw error;
             }
         }

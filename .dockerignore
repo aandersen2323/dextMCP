@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.DS_Store
+tests
+coverage
+*.sqlite
+tools_vector.db
+.env

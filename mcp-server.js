@@ -3,9 +3,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import VectorSearch from './vector_search.js';
 import VectorDatabase from './database.js';
-import { initializeMCPClient, getMCPClient } from './index.js';
+import { initializeMCPClient, getMCPClient } from './lib/mcpClient.js';
+import { getRecommender } from './tool_recommender.js';
 import crypto from 'crypto';
 import {
     buildCorsOptions,
@@ -61,7 +61,7 @@ async function getEnhancedServerDescription() {
                 serverDescriptions.push(description);
             }
         } catch (error) {
-            console.error('获取MCP工具信息失败:', error.message);
+            appLogger.error({ err: error }, '获取MCP工具信息失败');
             // 如果获取工具信息失败，仍然返回基本的服务器描述
             try {
                 await ensureVectorDatabaseReady();
@@ -77,7 +77,7 @@ async function getEnhancedServerDescription() {
                     }
                 }
             } catch (dbError) {
-                console.error('从数据库读取服务器配置失败:', dbError.message);
+                appLogger.error({ err: dbError }, '从数据库读取服务器配置失败');
             }
         }
 
@@ -87,13 +87,13 @@ async function getEnhancedServerDescription() {
 
         return '';
     } catch (error) {
-        console.error('获取增强服务器描述失败:', error.message);
+        appLogger.error({ err: error }, '获取增强服务器描述失败');
         return '';
     }
 }
 
 // 获取动态服务器名称
-const mcpToolsInfo = global.mcpToolsInfo || { serverName: 'dext', tools: [] };
+const mcpToolsInfo = globalThis.mcpToolsInfo || { serverName: 'dext', tools: [] };
 const dynamicServerName = mcpToolsInfo.serverName || 'dext';
 
 // Create an MCP server with dynamic name
@@ -102,29 +102,36 @@ const server = new McpServer({
     version: '1.0.0'
 });
 
-console.log(`创建MCP服务器: ${dynamicServerName}`);
+appLogger.info(`创建MCP服务器: ${dynamicServerName}`);
 
-const vectorSearch = new VectorSearch();
 const vectorDatabase = new VectorDatabase();
-let vectorSearchInitPromise = null;
 let vectorDatabaseInitPromise = null;
 let mcpClient = null;
 let mcpClientInitPromise = null;
+const toolRecommender = getRecommender();
+let recommenderInitPromise = null;
 
-async function ensureVectorSearchReady() {
-    if (vectorSearchInitPromise) {
-        await vectorSearchInitPromise;
-        return;
+async function ensureToolRecommenderReady() {
+    if (toolRecommender.isReady) {
+        return toolRecommender;
     }
 
-    vectorSearchInitPromise = (async () => {
-        await vectorSearch.initialize();
+    if (recommenderInitPromise) {
+        return recommenderInitPromise;
+    }
+
+    recommenderInitPromise = (async () => {
+        await ensureVectorDatabaseReady();
+        const client = await ensureMCPClientReady();
+        await toolRecommender.initialize(client, { autoIndex: true });
+        appLogger.info('✅ 工具推荐系统已准备就绪');
+        return toolRecommender;
     })();
 
     try {
-        await vectorSearchInitPromise;
+        return await recommenderInitPromise;
     } catch (error) {
-        vectorSearchInitPromise = null;
+        recommenderInitPromise = null;
         throw error;
     }
 }
@@ -162,14 +169,14 @@ async function ensureMCPClientReady() {
         try {
             mcpClient = await initializeMCPClient();
             if (mcpClient) {
-                console.log('✅ MCP客户端初始化成功');
+                appLogger.info('✅ MCP客户端初始化成功');
             } else {
-                console.log('⚠️ MCP客户端初始化失败，使用空客户端');
+                appLogger.info('⚠️ MCP客户端初始化失败，使用空客户端');
                 mcpClient = { async getTools() { return []; } };
             }
             return mcpClient;
         } catch (error) {
-            console.error('❌ MCP客户端初始化失败:', error.message);
+            appLogger.error({ err: error }, '❌ MCP客户端初始化失败');
             mcpClient = { async getTools() { return []; } };
             return mcpClient;
         }
@@ -201,9 +208,9 @@ server.registerTool(
     },
     async ({ descriptions, sessionId, serverNames, groupNames }) => {
         try {
-            await ensureVectorSearchReady();
             await ensureVectorDatabaseReady();
             const mcpClient = await ensureMCPClientReady();
+            const recommender = await ensureToolRecommenderReady();
 
             // 获取增强的服务器描述
             const enhancedServerDescription = await getEnhancedServerDescription();
@@ -217,7 +224,7 @@ server.registerTool(
                 // 检查传入的sessionId是否有历史记录
                 const sessionHistory = vectorDatabase.getSessionHistory(finalSessionId);
                 if (!sessionHistory || sessionHistory.length === 0) {
-                    console.log(`⚠️ 传入的sessionId ${finalSessionId} 没有历史记录，将重新生成`);
+                    appLogger.info(`⚠️ 传入的sessionId ${finalSessionId} 没有历史记录，将重新生成`);
                     needToGenerateNewSession = true;
                 }
             } else {
@@ -233,9 +240,8 @@ server.registerTool(
             // 获取该session的历史检索记录
             const sessionHistory = vectorDatabase.getSessionHistory(finalSessionId);
             const knownToolMD5s = new Set(sessionHistory.map(item => item.tool_md5));
-            console.log(`📋 Session ${finalSessionId} 已检索过的工具数量: ${knownToolMD5s.size}`);
+            appLogger.info(`📋 Session ${finalSessionId} 已检索过的工具数量: ${knownToolMD5s.size}`);
 
-            const modelName = process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
             const topK = parseInt(process.env.TOOL_RETRIEVER_TOP_K || '5', 10);
             const threshold = Number(process.env.TOOL_RETRIEVER_THRESHOLD || '0.1');
 
@@ -335,7 +341,7 @@ server.registerTool(
                 result.server_description = enhancedServerDescription;
             }
 
-            console.log(`✅ 检索完成 - 新工具: ${result.summary.new_tools_count}, 已知工具: ${result.summary.known_tools_count}`);
+            appLogger.info(`✅ 检索完成 - 新工具: ${result.summary.new_tools_count}, 已知工具: ${result.summary.known_tools_count}`);
 
             return {
                 content: [
@@ -346,7 +352,7 @@ server.registerTool(
 
         } catch (error) {
             const message = `工具检索失败: ${error.message}`;
-            console.error('❌ Retriever工具执行失败:', error);
+            appLogger.error({ err: error }, '❌ Retriever工具执行失败');
 
             return {
                 content: [
@@ -393,7 +399,7 @@ server.registerTool(
                 content: [{ type: 'text', text: JSON.stringify(result) }]
             };
         } catch (error) {
-            console.log(error)
+            appLogger.error({ err: error }, '工具执行失败');
             const errorMessage = `工具执行失败: ${error.message}`;
             return {
                 content: [{ type: 'text', text: errorMessage }],
@@ -423,6 +429,9 @@ server.registerResource(
 
 // Set up Express and HTTP transport
 const app = express();
+
+app.use(createRequestLogger({ loggerInstance: logger }));
+app.use(metricsMiddleware);
 
 // CORS configuration
 const corsOptions = buildCorsOptions();
@@ -462,7 +471,31 @@ app.get('/health', cors(corsOptions), (_req, res) => {
     });
 });
 
+app.get('/metrics', metricsHandler);
+
 // MCP Servers CRUD API
+
+adminRouter.post('/sync', async (_req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const client = await ensureMCPClientReady();
+
+        if (!client) {
+            return res.status(503).json({ error: 'MCP客户端未就绪，无法执行同步' });
+        }
+
+        const recommender = await ensureToolRecommenderReady();
+        const results = await recommender.reindex();
+
+        res.json({
+            message: '工具索引同步完成',
+            indexed: Array.isArray(results) ? results.length : 0
+        });
+    } catch (error) {
+        appLogger.error({ err: error }, '触发工具索引同步失败');
+        res.status(500).json(maskError());
+    }
+});
 
 // Input validation schemas
 const createMcpServerSchema = z.object({
@@ -937,7 +970,7 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
 
         const server = formatMcpServerRow(updatedRow);
 
-        console.log(`✅ 更新MCP服务器: ${server.server_name} (ID: ${id})`);
+        appLogger.info(`✅ 更新MCP服务器: ${server.server_name} (ID: ${id})`);
 
         res.json({
             message: '服务器更新成功',
@@ -1112,7 +1145,7 @@ adminRouter.delete('/mcp-servers/:id', async (req, res) => {
             return res.status(500).json({ error: '删除失败，可能没有数据被删除' });
         }
 
-        console.log(`✅ 删除MCP服务器: ${existingRow.server_name} (ID: ${id})`);
+        appLogger.info(`✅ 删除MCP服务器: ${existingRow.server_name} (ID: ${id})`);
 
         res.json({
             message: '服务器删除成功',
@@ -1174,6 +1207,9 @@ adminRouter.get('/mcp-groups/:id', async (req, res) => {
         console.error('获取分组失败:', error);
         res.status(500).json(maskError());
     }
+
+    appLogger.error({ err }, '未处理的服务端错误');
+    res.status(err?.status || 500).json(maskError());
 });
 
 // POST /api/mcp-groups - 创建分组
@@ -1359,10 +1395,50 @@ app.post('/mcp', cors(corsOptions), async (req, res) => {
     await transport.handleRequest(req, res, req.body);
 });
 
-const port = parseInt(process.env.MCP_SERVER_PORT || '3000');
-app.listen(port, () => {
-    console.log(`Demo MCP Server running on http://localhost:${port}/mcp`);
-}).on('error', error => {
-    console.error('Server error:', error);
-    process.exit(1);
-});
+let httpServer = null;
+
+export function startHttpServer({ port } = {}) {
+    const resolvedPort = Number.parseInt(port ?? process.env.MCP_SERVER_PORT ?? '3000', 10);
+
+    if (httpServer) {
+        return httpServer;
+    }
+
+    httpServer = app.listen(resolvedPort, () => {
+        appLogger.info(`Demo MCP Server running on http://localhost:${resolvedPort}/mcp`);
+    });
+
+    httpServer.on('error', error => {
+        appLogger.error({ err: error }, 'Server error');
+        if (process.env.NODE_ENV !== 'test') {
+            process.exit(1);
+        }
+    });
+
+    return httpServer;
+}
+
+export async function stopHttpServer() {
+    if (!httpServer) {
+        return;
+    }
+
+    await new Promise((resolve, reject) => {
+        httpServer.close(err => {
+            if (err) {
+                reject(err);
+                return;
+            }
+
+            resolve();
+        });
+    });
+
+    httpServer = null;
+}
+
+export { app };
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+    startHttpServer();
+}

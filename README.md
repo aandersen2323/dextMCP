@@ -85,7 +85,12 @@ graph TB
 ## Project Structure
 
 ```
-├── index.js                  # Entry point: initialize MCP client, vector tests, start server
+├── index.js                  # Entry point: bootstrap MCP client and server startup sequence
+├── lib/
+│   ├── embedding.js          # Shared embedding helpers for vectorization routines
+│   └── mcpClient.js          # MCP client initialization and environment interpolation utilities
+├── scripts/
+│   └── diagnostics.js        # Optional diagnostics to validate embeddings and vector search
 ├── mcp-server.js             # Local MCP server (Express + MCP SDK) + RESTful API
 ├── vector_search.js          # Tool vectorization and retrieval logic
 ├── database.js               # SQLite + sqlite-vec manager
@@ -124,6 +129,7 @@ npm install
 | `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
 | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3000` | ❌ |
+| `TOOLS_DB_PATH` | Custom path for the SQLite database file | `<project>/tools_vector.db` | ❌ |
 | `TOOL_RETRIEVER_TOP_K` | Default number of tools returned by `retriever` | `5` | ❌ |
 | `TOOL_RETRIEVER_THRESHOLD` | Minimum similarity threshold | `0.1` | ❌ |
 | `ADMIN_API_KEY` | Secret required to access `/api` administration endpoints | - | ✅ |
