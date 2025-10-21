@@ -15,6 +15,15 @@ import {
     secureSessionId,
     maskError
 } from './security.js';
+import {
+    createChildLogger,
+    createRequestLogger,
+    logger,
+    metricsHandler,
+    metricsMiddleware
+} from './observability.js';
+
+const appLogger = createChildLogger({ module: 'mcp-server' });
 
 // Read server information from database and generate enhanced description
 async function getEnhancedServerDescription() {

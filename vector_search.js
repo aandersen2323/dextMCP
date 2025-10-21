@@ -25,26 +25,6 @@ async function runWithConcurrency(items, limit, handler) {
 
 const vectorLogger = createChildLogger({ module: 'vector-search' });
 
-async function runWithConcurrency(items, limit, handler) {
-    const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
-    let index = 0;
-
-    const workers = Array.from({ length: Math.min(concurrency, items.length || 0) }, async () => {
-        while (true) {
-            const currentIndex = index;
-            index += 1;
-
-            if (currentIndex >= items.length) {
-                break;
-            }
-
-            await handler(items[currentIndex], currentIndex);
-        }
-    });
-
-    await Promise.all(workers);
-}
-
 class VectorSearch {
     constructor() {
         this.db = new VectorDatabase();
