@@ -1,6 +1,6 @@
 # Dext - Advanced MCP Tool Retrieval & Vector Indexing System
 
-[中文文档](README.zh-CN.md) | English
+[Chinese documentation](README.zh-CN.md) | English
 
 **Dext** is an advanced MCP (Model Context Protocol) tool retrieval and vector indexing system that enables intelligent tool discovery and execution through semantic search. It features a database-driven configuration management system with RESTful API for dynamic MCP server management.
 
