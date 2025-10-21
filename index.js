@@ -17,55 +17,55 @@ async function startMCPServer() {
     try {
         await import('./mcp-server.js');
         mcpServerStarted = true;
-        console.log('MCP服务器启动成功!');
+        console.log('MCP server started successfully!');
     } catch (error) {
-        console.error('MCP服务器启动失败:', error.message);
+        console.error('Failed to start MCP server:', error.message);
     }
 }
 
 function greet(name) {
-    return `你好, ${name}! 欢迎来到Node.js世界!`;
+    return `Hello, ${name}! Welcome to the Node.js world!`;
 }
 
 async function bootstrapDiagnostics(mcpClient) {
     const embeddingApiKey = process.env.EMBEDDING_NG_API_KEY ?? process.env.EMBEDDING_API_KEY;
     if (embeddingApiKey && embeddingApiKey !== 'your-doubao-api-key-here') {
-        console.log('\n检测到API密钥配置，开始向量化测试...');
+        console.log('\nDetected API key configuration. Running embedding diagnostics...');
         await runVectorizationDiagnostics();
         if (mcpClient) {
-            console.log('\n🔍 开始向量搜索功能测试...');
+            console.log('\n🔍 Starting vector search diagnostics...');
             await runVectorSearchDiagnostics(mcpClient);
         }
     } else {
-        console.log('\n🗄️  测试数据库初始化功能...');
+        console.log('\n🗄️  Testing database initialization...');
         await runDatabaseInitializationDiagnostics();
     }
 }
 
 async function main() {
-    console.log(greet('开发者'));
-    console.log('项目启动成功! 🚀');
+    console.log(greet('developer'));
+    console.log('Project bootstrap complete! 🚀');
 
-    console.log('\n正在初始化MCP客户端...');
+    console.log('\nInitializing MCP client...');
     const mcpClient = await initializeMCPClient();
 
     if (mcpClient) {
-        console.log('MCP客户端已准备就绪，可以使用各种工具服务!');
+        console.log('MCP client ready—tools can now be used!');
         const tools = await mcpClient.getTools();
         const toolNames = tools.map(tool => tool.name);
         const dynamicServerName = `dext-with-${toolNames.join(', ')}`;
 
-        console.log(`动态服务器名称: ${dynamicServerName}`);
+        console.log(`Dynamic server name: ${dynamicServerName}`);
 
         globalThis.mcpToolsInfo = {
             serverName: dynamicServerName,
             tools
         };
 
-        console.log('\n正在启动MCP服务器...');
+        console.log('\nStarting MCP server...');
         await startMCPServer();
     } else {
-        console.log('MCP客户端初始化失败，但应用仍可正常运行。');
+        console.log('MCP client initialization failed, but the app will continue running.');
         globalThis.mcpToolsInfo = {
             serverName: 'dext',
             tools: []

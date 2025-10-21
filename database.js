@@ -1,4 +1,4 @@
-// SQLite数据库管理模块 (使用better-sqlite3 + sqlite-vec)
+// SQLite database management module (better-sqlite3 + sqlite-vec)
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { readFileSync } from 'fs';
@@ -10,7 +10,7 @@ import { createChildLogger } from './observability.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 数据库文件路径
+// Database file path
 const dbPathFromEnv = process.env.TOOLS_DB_PATH;
 const DB_PATH = dbPathFromEnv
     ? (isAbsolute(dbPathFromEnv) ? dbPathFromEnv : join(process.cwd(), dbPathFromEnv))
@@ -24,52 +24,52 @@ class VectorDatabase {
     }
 
     /**
-     * 初始化数据库连接
+     * Initialize the database connection
      */
     async initialize() {
         try {
-            // 创建数据库连接
+            // Create the database connection
             this.db = new Database(DB_PATH);
             
-            // 加载sqlite-vec扩展
+            // Load the sqlite-vec extension
             this.loadVectorExtension();
             
-            // 执行建表语句
+            // Execute schema statements
             this.createTables();
             
-            dbLogger.info('✅ 数据库初始化成功 (使用better-sqlite3 + sqlite-vec)');
-            dbLogger.info(`📁 数据库文件路径: ${DB_PATH}`);
+            dbLogger.info('✅ Database initialized (better-sqlite3 + sqlite-vec)');
+            dbLogger.info(`📁 Database file path: ${DB_PATH}`);
             
             return true;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 数据库初始化失败');
+            dbLogger.error({ err: error }, '❌ Failed to initialize database');
             throw error;
         }
     }
 
     /**
-     * 加载sqlite-vec扩展
+     * Load the sqlite-vec extension
      */
     loadVectorExtension() {
         try {
             sqliteVec.load(this.db);
-            dbLogger.info('✅ sqlite-vec扩展加载成功');
+            dbLogger.info('✅ sqlite-vec extension loaded');
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 加载sqlite-vec扩展失败');
+            dbLogger.error({ err: error }, '❌ Failed to load sqlite-vec extension');
             throw error;
         }
     }
 
     /**
-     * 创建数据库表
+     * Create database tables
      */
     createTables() {
         try {
-            // 读取SQL文件
+            // Read the SQL file
             const schemaPath = join(__dirname, 'database_schema.sql');
             const schema = readFileSync(schemaPath, 'utf8');
             
-            // 解析SQL语句
+            // Parse SQL statements
             const statements = [];
             let currentStatement = '';
             const lines = schema.split('\n');
@@ -77,14 +77,14 @@ class VectorDatabase {
             for (const line of lines) {
                 const trimmedLine = line.trim();
                 
-                // 跳过注释行和空行
+                // Skip comment lines and blank lines
                 if (trimmedLine.startsWith('--') || trimmedLine === '') {
                     continue;
                 }
                 
                 currentStatement += line + '\n';
                 
-                // 如果行以分号结尾，表示语句结束
+                // A semicolon marks the end of a statement
                 if (trimmedLine.endsWith(';')) {
                     const statement = currentStatement.trim();
                     if (statement) {
@@ -94,24 +94,24 @@ class VectorDatabase {
                 }
             }
             
-            // 执行所有SQL语句
+            // Execute all SQL statements
             for (const statement of statements) {
-                dbLogger.info(`📝 执行SQL: ${statement.substring(0, 50)}...`);
+                dbLogger.info(`📝 Executing SQL: ${statement.substring(0, 50)}...`);
                 this.db.exec(statement);
             }
             
-            dbLogger.info('📋 数据库表创建成功');
+            dbLogger.info('📋 Database tables created');
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 创建数据库表失败');
+            dbLogger.error({ err: error }, '❌ Failed to create database tables');
             throw error;
         }
     }
 
     /**
-     * 生成工具文本的MD5哈希值
-     * @param {string} toolName - 工具名称
-     * @param {string} description - 工具描述
-     * @returns {string} MD5哈希值
+     * Generate an MD5 hash of tool text
+     * @param {string} toolName - Tool name
+     * @param {string} description - Tool description
+     * @returns {string} MD5 hash
      */
     generateToolMD5(toolName, description = '') {
         const text = `${toolName}${description}`.trim();
@@ -119,64 +119,64 @@ class VectorDatabase {
     }
 
     /**
-     * 保存工具向量数据
-     * @param {string} toolName - 工具名称
-     * @param {string} description - 工具描述
-     * @param {Array<number>} vector - 向量数据
-     * @param {string} modelName - 模型名称
-     * @returns {number} 插入的记录ID
+     * Persist tool vector data
+     * @param {string} toolName - Tool name
+     * @param {string} description - Tool description
+     * @param {Array<number>} vector - Vector data
+     * @param {string} modelName - Embedding model name
+     * @returns {number} Inserted record ID
      */
     saveToolVector(toolName, description, vector, modelName) {
         try {
             const toolMD5 = this.generateToolMD5(toolName, description);
 
-            // 检查是否已存在
+            // Check if an entry already exists
             const existingStmt = this.db.prepare('SELECT id FROM tool_vectors WHERE tool_md5 = ? AND model_name = ?');
             const existing = existingStmt.get(toolMD5, modelName);
 
             let toolId;
 
             if (existing) {
-                // 更新现有记录
+                // Update the existing record
                 const updateStmt = this.db.prepare('UPDATE tool_vectors SET tool_name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
                 updateStmt.run(toolName, description, existing.id);
                 toolId = existing.id;
-                dbLogger.info(`🔄 更新工具向量: ${toolName} (ID: ${toolId})`);
+                dbLogger.info(`🔄 Updated tool vector: ${toolName} (ID: ${toolId})`);
             } else {
-                // 插入新记录
+                // Insert a new record
                 const insertStmt = this.db.prepare('INSERT INTO tool_vectors (tool_md5, model_name, tool_name, description) VALUES (?, ?, ?, ?)');
                 const result = insertStmt.run(toolMD5, modelName, toolName, description);
                 toolId = result.lastInsertRowid;
-                dbLogger.info(`✅ 保存工具元数据: ${toolName} (ID: ${toolId})`);
+                dbLogger.info(`✅ Saved tool metadata: ${toolName} (ID: ${toolId})`);
             }
 
-            // 将向量存储到vec_tool_embeddings表中，使用工具ID作为rowid
+            // Store the vector in vec_tool_embeddings using the tool ID as the rowid
             const vectorFloat32 = new Float32Array(vector);
             const deleteExistingVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
             deleteExistingVecStmt.run(toolId);
             const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(rowid, tool_vector) VALUES (?, ?)');
             vecInsertStmt.run(toolId, vectorFloat32);
 
-            dbLogger.info(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${toolId}, 维度: ${vector.length})`);
+            dbLogger.info(`✅ Saved tool vector: ${toolName} (MD5: ${toolMD5}, vector ID: ${toolId}, dimension: ${vector.length})`);
 
             return toolId;
         } catch (error) {
-            dbLogger.error({ err: error, toolName }, '❌ 保存工具向量失败');
+            dbLogger.error({ err: error, toolName }, '❌ Failed to save tool vector');
             throw error;
         }
     }
 
     /**
-     * 批量保存工具向量数据
-     * @param {Array} toolsData - 工具数据数组
-     * @param {string} modelName - 模型名称
-     * @returns {Array<number>} 插入的记录ID数组
+     * Batch save tool vectors
+     * @param {Array} toolsData - Collection of tool entries
+     * @param {string} modelName - Embedding model name
+     * @returns {Array<number>} Inserted record IDs
      */
     saveToolVectorsBatch(toolsData, modelName) {
         try {
             const results = [];
             
-            // 开始事务
+            // Begin transaction
             const transaction = this.db.transaction((tools) => {
                 for (const toolData of tools) {
                     const { toolName, description, vector } = toolData;
@@ -185,24 +185,24 @@ class VectorDatabase {
                 }
             });
             
-            // 执行事务
+            // Execute the transaction
             transaction(toolsData);
             
-            dbLogger.info(`✅ 批量保存完成: ${toolsData.length} 个工具向量`);
+            dbLogger.info(`✅ Batch save complete: ${toolsData.length} tool vectors`);
             return results;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 批量保存工具向量失败');
+            dbLogger.error({ err: error }, '❌ Failed to batch save tool vectors');
             throw error;
         }
     }
 
     /**
-     * 向量相似性搜索
-     * @param {Array<number>} queryVector - 查询向量
-     * @param {number} limit - 返回结果数量限制
-     * @param {number} threshold - 相似度阈值
-     * @param {Array<string>} serverNames - 可选的服务器名称列表，用于过滤工具
-     * @returns {Array} 相似工具列表
+     * Run a vector similarity search
+     * @param {Array<number>} queryVector - Query vector
+     * @param {number} limit - Maximum results
+     * @param {number} threshold - Similarity threshold
+     * @param {Array<string>} serverNames - Optional server filters
+     * @returns {Array} Matching tools
      */
     searchSimilarVectors(queryVector, limit = 5, threshold = 0.1, serverNames = null) {
         try {
@@ -212,7 +212,7 @@ class VectorDatabase {
             let params;
 
             if (serverNames && serverNames.length > 0) {
-                // 构建服务器名称过滤条件
+                // Build server filter predicates
                 const serverConditions = serverNames.map(() => 'tv.tool_name LIKE ?').join(' OR ');
                 const serverParams = serverNames.map(serverName => `${serverName}__%`);
 
@@ -237,7 +237,7 @@ class VectorDatabase {
                 stmt = this.db.prepare(sql);
                 params = [queryVectorFloat32, queryVectorFloat32, queryVectorFloat32, threshold, ...serverParams, limit];
             } else {
-                // 不进行服务器过滤的原始查询
+                // Query without server filters
                 const sql = `
                     SELECT
                         tv.id,
@@ -262,23 +262,23 @@ class VectorDatabase {
             const results = stmt.all(...params);
 
             if (serverNames && serverNames.length > 0) {
-                dbLogger.info(`📊 向量搜索完成，找到 ${results.length} 个相似工具 (服务器过滤: ${serverNames.join(', ')})`);
+                dbLogger.info(`📊 Vector search returned ${results.length} similar tools (servers filtered: ${serverNames.join(', ')})`);
             } else {
-                dbLogger.info(`📊 向量搜索完成，找到 ${results.length} 个相似工具`);
+                dbLogger.info(`📊 Vector search returned ${results.length} similar tools`);
             }
 
             return results;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 向量相似性搜索失败');
+            dbLogger.error({ err: error }, '❌ Vector similarity search failed');
             throw error;
         }
     }
 
     /**
-     * 根据MD5查询工具信息
-     * @param {string} toolMD5 - 工具MD5哈希值
-     * @param {string} modelName - 模型名称
-     * @returns {Object|null} 工具信息
+     * Look up tool metadata by MD5
+     * @param {string} toolMD5 - Tool MD5 hash
+     * @param {string} modelName - Embedding model name
+     * @returns {Object|null} Tool metadata
      */
     getToolByMD5(toolMD5, modelName) {
         try {
@@ -286,22 +286,22 @@ class VectorDatabase {
             const row = stmt.get(toolMD5, modelName);
             return row || null;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 根据MD5查询工具失败');
+            dbLogger.error({ err: error }, '❌ Failed to query tool by MD5');
             throw error;
         }
     }
 
     /**
-     * 删除工具向量数据
-     * @param {string} toolMD5 - 工具MD5哈希值
-     * @param {string} modelName - 模型名称
-     * @returns {number} 删除的记录数
+     * Delete tool vector data
+     * @param {string} toolMD5 - Tool MD5 hash
+     * @param {string} modelName - Embedding model name
+     * @returns {number} Deleted record count
      */
     deleteToolVector(toolMD5, modelName = null) {
         try {
-            // 使用事务确保数据一致性
+            // Use a transaction to keep data consistent
             const transaction = this.db.transaction(() => {
-                // 1. 首先查找要删除的工具ID
+                // 1. Look up the tool ID
                 let toolIds = [];
                 if (modelName) {
                     const findStmt = this.db.prepare('SELECT id FROM tool_vectors WHERE tool_md5 = ? AND model_name = ?');
@@ -317,13 +317,13 @@ class VectorDatabase {
                     return 0;
                 }
 
-                // 2. 删除映射关系和向量数据
+                // 2. Remove mapping records and vector data
                 for (const toolId of toolIds) {
                     const deleteVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
                     deleteVecStmt.run(toolId);
                 }
 
-                // 3. 删除工具元数据
+                // 3. Remove tool metadata
                 let result;
                 if (modelName) {
                     const deleteStmt = this.db.prepare('DELETE FROM tool_vectors WHERE tool_md5 = ? AND model_name = ?');
@@ -338,10 +338,10 @@ class VectorDatabase {
 
             const deletedCount = transaction();
             
-            dbLogger.info(`🗑️  删除工具向量: ${toolMD5} (删除数量: ${deletedCount})`);
+            dbLogger.info(`🗑️  Deleted tool vector: ${toolMD5} (rows removed: ${deletedCount})`);
             return deletedCount;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 删除工具向量失败');
+            dbLogger.error({ err: error }, '❌ Failed to delete tool vector');
             throw error;
         }
     }
@@ -351,14 +351,14 @@ class VectorDatabase {
             const stmt = this.db.prepare(sql);
             return stmt.run(...params);
         } catch (error) {
-            dbLogger.error({ err: error, sql }, '❌ 执行SQL失败');
+            dbLogger.error({ err: error, sql }, '❌ Failed to execute SQL');
             throw error;
         }
     }
 
     /**
-     * 获取数据库统计信息
-     * @returns {Object} 统计信息
+     * Retrieve database statistics
+     * @returns {Object} Stats
      */
     getStats() {
         try {
@@ -382,18 +382,18 @@ class VectorDatabase {
                 modelStats: modelStats
             };
             
-            dbLogger.info('📊 数据库统计信息:', stats);
+            dbLogger.info('📊 Database statistics:', stats);
             return stats;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 获取统计信息失败');
+            dbLogger.error({ err: error }, '❌ Failed to retrieve statistics');
             throw error;
         }
     }
 
     /**
-     * 获取服务器所属的分组名称列表
-     * @param {number} serverId - MCP服务器ID
-     * @returns {Array<string>} 分组名称列表
+     * Retrieve the group names assigned to a server
+     * @param {number} serverId - MCP server ID
+     * @returns {Array<string>} Group names
      */
     getGroupNamesForServer(serverId) {
         try {
@@ -408,17 +408,17 @@ class VectorDatabase {
             const rows = stmt.all(serverId);
             return rows.map(row => row.group_name);
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 获取服务器分组失败');
+            dbLogger.error({ err: error }, '❌ Failed to fetch server groups');
             throw error;
         }
     }
 
     /**
-     * 根据分组名称获取服务器名称列表
-     * @param {Array<string>} groupNames - 分组名称列表
-     * @param {Object} options - 选项
-     * @param {boolean} options.enabledOnly - 是否仅返回启用的服务器
-     * @returns {Array<string>} 服务器名称列表
+     * Resolve server names from one or more group names
+     * @param {Array<string>} groupNames - Group names
+     * @param {Object} options - Options bag
+     * @param {boolean} options.enabledOnly - Whether to only return enabled servers
+     * @returns {Array<string>} Server names
      */
     getServerNamesForGroups(groupNames, { enabledOnly = true } = {}) {
         try {
@@ -447,15 +447,15 @@ class VectorDatabase {
             const serverNames = rows.map(row => row.server_name);
             return Array.from(new Set(serverNames));
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 根据分组获取服务器失败');
+            dbLogger.error({ err: error }, '❌ Failed to fetch servers by group');
             throw error;
         }
     }
 
     /**
-     * 获取session的历史检索工具
-     * @param {string} sessionId - 会话ID
-     * @returns {Array} 历史检索的工具列表
+     * Fetch the tools retrieved in a session
+     * @param {string} sessionId - Session identifier
+     * @returns {Array} Previously retrieved tools
      */
     getSessionHistory(sessionId) {
         try {
@@ -466,19 +466,19 @@ class VectorDatabase {
                 ORDER BY retrieved_at DESC
             `);
             const results = stmt.all(sessionId);
-            dbLogger.info(`📋 获取session ${sessionId} 的历史记录: ${results.length} 个工具`);
+            dbLogger.info(`📋 Loaded session history for ${sessionId}: ${results.length} tools`);
             return results;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId }, '❌ 获取session历史记录失败');
+            dbLogger.error({ err: error, sessionId }, '❌ Failed to fetch session history');
             throw error;
         }
     }
 
     /**
-     * 检查工具是否已被session检索过
-     * @param {string} sessionId - 会话ID
-     * @param {string} toolMD5 - 工具MD5
-     * @returns {boolean} 是否已检索过
+     * Determine whether a session already retrieved a tool
+     * @param {string} sessionId - Session identifier
+     * @param {string} toolMD5 - Tool MD5 hash
+     * @returns {boolean} Whether the tool was already retrieved
      */
     isToolRetrievedBySession(sessionId, toolMD5) {
         try {
@@ -490,17 +490,17 @@ class VectorDatabase {
             const result = stmt.get(sessionId, toolMD5);
             return result.count > 0;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId, toolMD5 }, '❌ 检查工具检索状态失败');
+            dbLogger.error({ err: error, sessionId, toolMD5 }, '❌ Failed to check tool retrieval status');
             throw error;
         }
     }
 
     /**
-     * 记录session检索的工具
-     * @param {string} sessionId - 会话ID
-     * @param {string} toolMD5 - 工具MD5
-     * @param {string} toolName - 工具名称
-     * @returns {number} 插入的记录ID
+     * Record the tools retrieved in a session
+     * @param {string} sessionId - Session identifier
+     * @param {string} toolMD5 - Tool MD5 hash
+     * @param {string} toolName - Tool name
+     * @returns {number} Inserted record ID
      */
     recordSessionToolRetrieval(sessionId, toolMD5, toolName) {
         try {
@@ -510,29 +510,29 @@ class VectorDatabase {
             `);
             const result = stmt.run(sessionId, toolMD5, toolName);
             if (result.changes > 0) {
-                dbLogger.info(`✅ 记录session工具检索: ${sessionId} -> ${toolName} (MD5: ${toolMD5})`);
+                dbLogger.info(`✅ Recorded session tool retrieval: ${sessionId} -> ${toolName} (MD5: ${toolMD5})`);
                 return result.lastInsertRowid;
             } else {
-                dbLogger.info(`⚠️ 工具已存在，跳过记录: ${sessionId} -> ${toolName}`);
+                dbLogger.info(`⚠️ Tool already present, skipping session record: ${sessionId} -> ${toolName}`);
                 return null;
             }
         } catch (error) {
-            dbLogger.error({ err: error, sessionId, toolMD5, toolName }, '❌ 记录session工具检索失败');
+            dbLogger.error({ err: error, sessionId, toolMD5, toolName }, '❌ Failed to record session tool retrieval');
             throw error;
         }
     }
 
     /**
-     * 批量记录session检索的工具
-     * @param {string} sessionId - 会话ID
-     * @param {Array} tools - 工具列表，格式: [{toolMD5, toolName}, ...]
-     * @returns {Array<number>} 插入的记录ID数组
+     * Batch record session tool retrievals
+     * @param {string} sessionId - Session identifier
+     * @param {Array} tools - Array of {toolMD5, toolName}
+     * @returns {Array<number>} Inserted IDs
      */
     recordSessionToolRetrievalBatch(sessionId, tools) {
         try {
             const results = [];
 
-            // 开始事务
+            // Begin transaction
             const transaction = this.db.transaction((sessionId, tools) => {
                 for (const tool of tools) {
                     const { toolMD5, toolName } = tool;
@@ -543,38 +543,38 @@ class VectorDatabase {
                 }
             });
 
-            // 执行事务
+            // Execute the transaction
             transaction(sessionId, tools);
 
-            dbLogger.info(`✅ 批量记录session工具检索完成: ${sessionId} -> ${results.length} 个新工具`);
+            dbLogger.info(`✅ Batch session history insert complete: ${sessionId} -> ${results.length} new tools`);
             return results;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId, toolsCount: tools?.length }, '❌ 批量记录session工具检索失败');
+            dbLogger.error({ err: error, sessionId, toolsCount: tools?.length }, '❌ Failed to batch record session history');
             throw error;
         }
     }
 
     /**
-     * 清理session的历史记录
-     * @param {string} sessionId - 会话ID
-     * @returns {number} 删除的记录数
+     * Clear the stored history for a session
+     * @param {string} sessionId - Session identifier
+     * @returns {number} Rows deleted
      */
     clearSessionHistory(sessionId) {
         try {
             const stmt = this.db.prepare('DELETE FROM session_tool_history WHERE session_id = ?');
             const result = stmt.run(sessionId);
-            dbLogger.info(`🗑️ 清理session历史记录: ${sessionId} (删除数量: ${result.changes})`);
+            dbLogger.info(`🗑️ Cleared session history: ${sessionId} (rows deleted: ${result.changes})`);
             return result.changes;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId }, '❌ 清理session历史记录失败');
+            dbLogger.error({ err: error, sessionId }, '❌ Failed to clear session history');
             throw error;
         }
     }
 
     /**
-     * 获取session的统计信息
-     * @param {string} sessionId - 会话ID
-     * @returns {Object} 统计信息
+     * Retrieve statistics for a session
+     * @param {string} sessionId - Session identifier
+     * @returns {Object} Statistics
      */
     getSessionStats(sessionId) {
         try {
@@ -598,26 +598,26 @@ class VectorDatabase {
                 latest_retrieval: latestResult.latest_retrieval
             };
         } catch (error) {
-            dbLogger.error({ err: error, sessionId }, '❌ 获取session统计信息失败');
+            dbLogger.error({ err: error, sessionId }, '❌ Failed to fetch session statistics');
             throw error;
         }
     }
 
     /**
-     * 关闭数据库连接
+     * Close the database connection
      */
     close() {
         if (this.db) {
             try {
                 this.db.close();
-                dbLogger.info('✅ 数据库连接已关闭');
+                dbLogger.info('✅ Database connection closed');
             } catch (error) {
-                dbLogger.error({ err: error }, '❌ 关闭数据库失败');
+                dbLogger.error({ err: error }, '❌ Failed to close database connection');
                 throw error;
             }
         }
     }
 }
 
-// 导出数据库实例
+// Export database instance
 export default VectorDatabase;

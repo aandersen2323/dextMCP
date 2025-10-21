@@ -1,17 +1,17 @@
-// 测试相似工具检测和删除功能
+// Script to test similar-tool detection and cleanup
 import VectorSearch from './vector_search.js';
 import { vectorizeString } from './lib/embedding.js';
 
 async function testSimilarToolDetection() {
     try {
-        console.log('🧪 开始测试相似工具检测和删除功能...');
+        console.log('🧪 Starting similar-tool detection test...');
         
-        // 初始化向量搜索引擎
+        // Initialize vector search engine
         const vectorSearch = new VectorSearch();
         await vectorSearch.initialize();
         
-        // 测试字符串相似度计算
-        console.log('\n📊 测试字符串相似度计算:');
+        // Validate string similarity calculation
+        console.log('\n📊 Testing string similarity:');
         const testCases = [
             ['docx_block_create', 'docx_block_create'],
             ['docx_block_create', 'docx_block_update'],
@@ -24,53 +24,53 @@ async function testSimilarToolDetection() {
             console.log(`   "${str1}" vs "${str2}": ${similarity.toFixed(4)}`);
         }
         
-        // 测试相似工具识别
-        console.log('\n🔍 测试相似工具识别:');
+        // Test similar tool identification
+        console.log('\n🔍 Identifying similar tools:');
         
-        // 创建一些测试工具数据
+        // Create sample tool data
         const testTools = [
             {
                 tool_name: 'existing_tool_v1',
-                description: '这是一个现有的工具，用于文档处理',
-                similarity: 0.98  // 高相似度
+                description: 'Existing tool used for document processing',
+                similarity: 0.98  // High similarity
             },
             {
                 tool_name: 'different_tool',
-                description: '这是一个完全不同的工具',
-                similarity: 0.5   // 低相似度
+                description: 'Completely different tool',
+                similarity: 0.5   // Low similarity
             },
             {
                 tool_name: 'similar_tool',
-                description: '这是一个类似的工具，用于文档处理功能',
-                similarity: 0.96  // 接近阈值但未达到
+                description: 'Similar tool used for document processing',
+                similarity: 0.96  // Near threshold but below
             }
         ];
         
         const toDelete = vectorSearch.identifySimilarToolsToDelete(
             'new_tool_v2',
-            '这是一个新的工具，用于文档处理和编辑',
+            'This is a new tool for document processing and editing',
             testTools,
-            0.97  // 阈值
+            0.97  // Threshold
         );
         
-        console.log(`✅ 识别结果：需要删除 ${toDelete.length} 个工具`);
+        console.log(`✅ Tools marked for removal: ${toDelete.length}`);
         toDelete.forEach(tool => {
-            console.log(`   - ${tool.tool_name} (相似度: ${tool.similarity})`);
+            console.log(`   - ${tool.tool_name} (similarity: ${tool.similarity})`);
         });
         
-        // 获取统计信息
-        console.log('\n📊 数据库统计信息:');
+        // Fetch statistics
+        console.log('\n📊 Database statistics:');
         const stats = await vectorSearch.getSearchStats();
         console.log(stats);
         
         await vectorSearch.close();
-        console.log('\n🎉 测试完成！');
+        console.log('\n🎉 Test complete!');
         
     } catch (error) {
-        console.error('❌ 测试失败:', error.message);
+        console.error('❌ Test failed:', error.message);
         console.error(error.stack);
     }
 }
 
-// 运行测试
+// Run test
 testSimilarToolDetection().catch(console.error);

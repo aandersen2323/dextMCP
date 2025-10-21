@@ -1,49 +1,49 @@
--- SQLite数据库表结构设计（使用sqlite-vec向量搜索版）
--- 用于存储工具的向量化数据，实现高效的向量相似性搜索
+-- SQLite database schema (sqlite-vec enabled)
+-- Stores tool embeddings for efficient similarity search
 
--- 工具向量表 (使用sqlite-vec)
+-- Tool vector table (sqlite-vec)
 CREATE TABLE IF NOT EXISTS tool_vectors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tool_md5 TEXT NOT NULL,                         -- 工具名称+描述的MD5哈希值
-    model_name TEXT NOT NULL,                       -- 向量化使用的模型名称
-    tool_name TEXT NOT NULL,                        -- 工具名称（用于调试）
-    description TEXT,                               -- 工具描述（用于调试）
+    tool_md5 TEXT NOT NULL,                         -- MD5 hash of tool name + description
+    model_name TEXT NOT NULL,                       -- Embedding model name
+    tool_name TEXT NOT NULL,                        -- Tool name (for debugging)
+    description TEXT,                               -- Tool description (for debugging)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 创建向量索引表 (sqlite-vec)
+-- Create vector index table (sqlite-vec)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_tool_embeddings USING vec0(
-    tool_vector FLOAT[1024]                         -- 向量数据，默认与 EMBEDDING_NG_VECTOR_DIMENSION 保持一致
+    tool_vector FLOAT[1024]                         -- Vector data, matches EMBEDDING_NG_VECTOR_DIMENSION
 );
 
--- MCP服务器配置表
+-- MCP server configuration table
 CREATE TABLE IF NOT EXISTS mcp_servers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_name TEXT NOT NULL UNIQUE,              -- 服务器名称（唯一键）
-    server_type TEXT NOT NULL CHECK (server_type IN ('http', 'stdio')), -- 服务器类型
-    url TEXT,                                      -- HTTP服务器URL（仅http类型）
-    command TEXT,                                  -- 命令（仅stdio类型）
-    args TEXT,                                     -- 命令参数（JSON格式，仅stdio类型）
-    headers TEXT,                                  -- HTTP头部（JSON格式，仅http类型）
-    env TEXT,                                      -- 环境变量（JSON格式）
-    description TEXT,                              -- 服务器描述
-    enabled INTEGER DEFAULT 1 CHECK (enabled IN (0, 1)), -- 是否启用（0=禁用，1=启用）
+    server_name TEXT NOT NULL UNIQUE,              -- Unique server name
+    server_type TEXT NOT NULL CHECK (server_type IN ('http', 'stdio')), -- Server type
+    url TEXT,                                      -- HTTP server URL (http only)
+    command TEXT,                                  -- Command (stdio only)
+    args TEXT,                                     -- Command arguments (JSON, stdio only)
+    headers TEXT,                                  -- HTTP headers (JSON, http only)
+    env TEXT,                                      -- Environment variables (JSON)
+    description TEXT,                              -- Server description
+    enabled INTEGER DEFAULT 1 CHECK (enabled IN (0, 1)), -- Enabled flag (0=disabled,1=enabled)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Session工具检索历史表
+-- Session tool retrieval history table
 CREATE TABLE IF NOT EXISTS session_tool_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,                      -- 会话ID
-    tool_md5 TEXT NOT NULL,                        -- 工具MD5
-    tool_name TEXT NOT NULL,                       -- 工具名称
-    retrieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,-- 检索时间
-    UNIQUE(session_id, tool_md5)                   -- 防止重复记录
+    session_id TEXT NOT NULL,                      -- Session ID
+    tool_md5 TEXT NOT NULL,                        -- Tool MD5
+    tool_name TEXT NOT NULL,                       -- Tool name
+    retrieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,-- Retrieval timestamp
+    UNIQUE(session_id, tool_md5)                   -- Prevent duplicate entries
 );
 
--- 创建索引以提高查询性能
+-- Indexes to improve query performance
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_md5 ON tool_vectors(tool_md5);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_model ON tool_vectors(model_name);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_name ON tool_vectors(tool_name);
@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
 CREATE INDEX IF NOT EXISTS idx_session_history_session_id ON session_tool_history(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_history_tool_md5 ON session_tool_history(tool_md5);
 
--- 创建视图方便查询
+-- Views for easier querying
 CREATE VIEW IF NOT EXISTS v_tool_search AS
 SELECT
     tv.id,
@@ -65,7 +65,7 @@ SELECT
     tv.updated_at
 FROM tool_vectors tv;
 
--- MCP服务器配置视图
+-- MCP server configuration view
 CREATE VIEW IF NOT EXISTS v_mcp_servers AS
 SELECT
     ms.id,
@@ -82,25 +82,25 @@ SELECT
     ms.updated_at
 FROM mcp_servers ms;
 
--- MCP服务器分组表
+-- MCP server group table
 CREATE TABLE IF NOT EXISTS mcp_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_name TEXT NOT NULL UNIQUE,             -- 分组名称（唯一）
-    description TEXT,                            -- 分组描述
+    group_name TEXT NOT NULL UNIQUE,             -- Unique group name
+    description TEXT,                            -- Group description
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- MCP服务器与分组关联表（支持一台服务器属于多个分组）
+-- MCP server to group mapping (supports many-to-many)
 CREATE TABLE IF NOT EXISTS mcp_server_groups (
-    server_id INTEGER NOT NULL,                  -- MCP服务器ID
-    group_id INTEGER NOT NULL,                   -- 分组ID
+    server_id INTEGER NOT NULL,                  -- MCP server ID
+    group_id INTEGER NOT NULL,                   -- Group ID
     PRIMARY KEY (server_id, group_id),
     FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE,
     FOREIGN KEY (group_id) REFERENCES mcp_groups(id) ON DELETE CASCADE
 );
 
--- 分组索引
+-- Group indexes
 CREATE INDEX IF NOT EXISTS idx_mcp_groups_name ON mcp_groups(group_name);
 CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_group ON mcp_server_groups(group_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_server ON mcp_server_groups(server_id);

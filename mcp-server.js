@@ -25,20 +25,20 @@ import {
 
 const appLogger = createChildLogger({ module: 'mcp-server' });
 
-// 从数据库读取服务器信息并生成增强描述
+// Read server metadata from the database and build enhanced descriptions
 async function getEnhancedServerDescription() {
     try {
         const serverDescriptions = [];
 
-        // 确保 MCP 客户端已准备就绪
+        // Ensure the MCP client is ready
         try {
             const mcpClient = await ensureMCPClientReady();
             const tools = await mcpClient.getTools();
 
-            // 按服务器分组工具
+            // Group tools by their originating server
             const toolsByServer = {};
             tools.forEach(tool => {
-                // 从工具名称中提取服务器名称（格式：serverName__toolName）
+                // Tool names encode the server name in the form serverName__toolName
                 const parts = tool.name.split('__');
                 const serverName = parts[0] || 'unknown';
                 const toolName = parts.slice(1).join('__') || tool.name;
@@ -49,7 +49,7 @@ async function getEnhancedServerDescription() {
                 toolsByServer[serverName].push(toolName);
             });
 
-            // 从数据库获取服务器配置
+            // Fetch server configuration records from the database
             await ensureVectorDatabaseReady();
             const db = vectorDatabase.db;
             const stmt = db.prepare('SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY server_name');
@@ -62,17 +62,17 @@ async function getEnhancedServerDescription() {
                     description += `(${serverRow.description})`;
                 }
 
-                // 添加工具名称列表
+                // Append the list of tool names
                 const serverTools = toolsByServer[serverRow.server_name];
                 if (serverTools && serverTools.length > 0) {
-                    description += ` - 工具: ${serverTools.join(', ')}`;
+                    description += ` - Tools: ${serverTools.join(', ')}`;
                 }
 
                 serverDescriptions.push(description);
             }
         } catch (error) {
-            appLogger.error({ err: error }, '获取MCP工具信息失败');
-            // 如果获取工具信息失败，仍然返回基本的服务器描述
+            appLogger.error({ err: error }, 'Failed to retrieve MCP tool metadata');
+            // If tool discovery fails fall back to static descriptions
             try {
                 await ensureVectorDatabaseReady();
                 const db = vectorDatabase.db;
@@ -87,22 +87,22 @@ async function getEnhancedServerDescription() {
                     }
                 }
             } catch (dbError) {
-                appLogger.error({ err: dbError }, '从数据库读取服务器配置失败');
+                appLogger.error({ err: dbError }, 'Failed to read server configuration from database');
             }
         }
 
         if (serverDescriptions.length > 0) {
-            return `当前可以使用的服务器：${serverDescriptions.join('、')}，务必不要直接使用它们，只可以使用它们用来检索！`;
+            return `Available servers: ${serverDescriptions.join(', ')}. Do not call them directly—only use them for retrieval!`;
         }
 
         return '';
     } catch (error) {
-        appLogger.error({ err: error }, '获取增强服务器描述失败');
+        appLogger.error({ err: error }, 'Failed to build enhanced server description');
         return '';
     }
 }
 
-// 获取动态服务器名称
+// Resolve the dynamic server name
 const mcpToolsInfo = globalThis.mcpToolsInfo || { serverName: 'dext', tools: [] };
 const dynamicServerName = mcpToolsInfo.serverName || 'dext';
 
@@ -112,7 +112,7 @@ const server = new McpServer({
     version: '1.0.0'
 });
 
-appLogger.info(`创建MCP服务器: ${dynamicServerName}`);
+appLogger.info(`Created MCP server: ${dynamicServerName}`);
 
 const vectorDatabase = new VectorDatabase();
 let vectorDatabaseInitPromise = null;
@@ -134,7 +134,7 @@ async function ensureToolRecommenderReady() {
         await ensureVectorDatabaseReady();
         const client = await ensureMCPClientReady();
         await toolRecommender.initialize(client, { autoIndex: true });
-        appLogger.info('✅ 工具推荐系统已准备就绪');
+        appLogger.info('✅ Tool recommendation system ready');
         return toolRecommender;
     })();
 
@@ -165,7 +165,7 @@ async function ensureVectorDatabaseReady() {
 }
 
 async function ensureMCPClientReady() {
-    // 首先尝试获取已初始化的客户端
+    // Attempt to reuse the initialized client first
     const existingClient = getMCPClient();
     if (existingClient) {
         return existingClient;
@@ -179,14 +179,14 @@ async function ensureMCPClientReady() {
         try {
             mcpClient = await initializeMCPClient();
             if (mcpClient) {
-                appLogger.info('✅ MCP客户端初始化成功');
+                appLogger.info('✅ MCP client initialized');
             } else {
-                appLogger.info('⚠️ MCP客户端初始化失败，使用空客户端');
+                appLogger.info('⚠️ MCP client initialization failed; using empty client');
                 mcpClient = { async getTools() { return []; } };
             }
             return mcpClient;
         } catch (error) {
-            appLogger.error({ err: error }, '❌ MCP客户端初始化失败');
+            appLogger.error({ err: error }, '❌ MCP client initialization failed');
             mcpClient = { async getTools() { return []; } };
             return mcpClient;
         }
@@ -200,20 +200,19 @@ async function ensureMCPClientReady() {
 server.registerTool(
     'retriever',
     {
-        title: '工具检索',
-        description: '通过自然语言描述来智能检索相关工具，返回语义最匹配的工具列表及完整信息。',
+        title: 'Tool Retriever',
+        description: 'Search for relevant tools using natural language and return the most relevant MCP tools.',
         inputSchema: {
-            descriptions: z.array(z.string().min(1, 'query不能为空').describe("对假想的工具进行详细描述，即你认为这个工具应该是什么样的。对一个目标工具的描述都写在一个描述中，不要写好几个描述都是描述同一个目标工具的。")).describe("鼓励一次性检索多个目标工具，把你的需求一次性说出来。例如："+`用户想要在飞书文档中插入一个时间轴块。首先我需要获取文档内容，然后根据内容在合适的位置插入时间轴块。
-
-如果你需要：
-
-先获取文档内容，了解文档的结构和主题
-分析文档内容，确定在哪里插入时间轴块最合适
-创建时间轴内容
-在合适的位置插入时间轴块，你就一次性提出对两个工具的检索：获取飞书文档内容的工具、创建时间轴块的工具`),
-            sessionId: z.string().describe("会话ID，6位字母数字组合"),
-            serverNames: z.array(z.string()).optional().describe("可选：指定服务器名称列表来限制检索范围，如 ['feishu', 'linear']"),
-            groupNames: z.array(z.string()).optional().describe("可选：按分组名称过滤可用服务器，如 ['devtools']")
+            descriptions: z
+                .array(
+                    z.string()
+                        .min(1, 'Query text cannot be empty')
+                        .describe('Describe each target tool in detail; provide one description per unique tool.')
+                )
+                .describe('You can request multiple tools in a single call—for example, fetching a Feishu document and inserting a timeline block.'),
+            sessionId: z.string().describe("Session identifier (6 alphanumeric characters)"),
+            serverNames: z.array(z.string()).optional().describe("Optional: limit retrieval to specific server names, e.g. ['feishu', 'linear']"),
+            groupNames: z.array(z.string()).optional().describe("Optional: filter by server group names, e.g. ['devtools']")
         },
     },
     async ({ descriptions, sessionId, serverNames, groupNames }) => {
@@ -222,19 +221,19 @@ server.registerTool(
             const mcpClient = await ensureMCPClientReady();
             const recommender = await ensureToolRecommenderReady();
 
-            // 获取增强的服务器描述
+            // Fetch the enhanced server description
             const enhancedServerDescription = await getEnhancedServerDescription();
 
-            // 处理sessionId：如果用户传入的sessionId没有历史记录，则重新生成
+            // Handle the session ID: if the provided ID has no history, generate a new one
             let finalSessionId = sessionId;
             let needToGenerateNewSession = false;
             let isFirstTimeSession = false;
 
             if (finalSessionId) {
-                // 检查传入的sessionId是否有历史记录
+                // Check whether the supplied session ID already has history
                 const sessionHistory = vectorDatabase.getSessionHistory(finalSessionId);
                 if (!sessionHistory || sessionHistory.length === 0) {
-                    appLogger.info(`⚠️ 传入的sessionId ${finalSessionId} 没有历史记录，将重新生成`);
+                    appLogger.info(`⚠️ Provided sessionId ${finalSessionId} has no history; generating a new one`);
                     needToGenerateNewSession = true;
                 }
             } else {
@@ -243,26 +242,26 @@ server.registerTool(
 
             if (needToGenerateNewSession) {
                 finalSessionId = secureSessionId();
-                appLogger.info(`🆕 生成新的sessionId: ${finalSessionId}`);
+                appLogger.info(`🆕 Generated new sessionId: ${finalSessionId}`);
                 isFirstTimeSession = true;
             }
 
-            // 获取该session的历史检索记录
+            // Load prior retrieval history for this session
             const sessionHistory = vectorDatabase.getSessionHistory(finalSessionId);
             const knownToolMD5s = new Set(sessionHistory.map(item => item.tool_md5));
-            appLogger.info(`📋 Session ${finalSessionId} 已检索过的工具数量: ${knownToolMD5s.size}`);
+            appLogger.info(`📋 Session ${finalSessionId} previously retrieved ${knownToolMD5s.size} tools`);
 
             const topK = parseInt(process.env.TOOL_RETRIEVER_TOP_K || '5', 10);
             const threshold = Number(process.env.TOOL_RETRIEVER_THRESHOLD || '0.1');
 
-            // 处理多个描述，为每个描述检索工具
-            const newTools = [];      // 新检索到的工具（完整信息）
-            const knownTools = [];    // 已知工具（只返回基本信息）
+            // Process each description to retrieve tools
+            const newTools = [];      // Newly retrieved tools (full details)
+            const knownTools = [];    // Known tools (return only basic info)
 
             for (let i = 0; i < descriptions.length; i++) {
                 const description = descriptions[i];
 
-                // 使用recommendTools方法来获取完整的MCP工具信息
+                // Use recommendTools to load full MCP tool metadata
                 const recommendations = await recommender.recommend(description, {
                     topK,
                     threshold,
@@ -274,7 +273,7 @@ server.registerTool(
 
                 const topResult = recommendations || [];
 
-                // 分离新工具和已知工具
+                // Separate new tools from those already seen
                 const newToolsForQuery = [];
                 const knownToolsForQuery = [];
 
@@ -286,10 +285,10 @@ server.registerTool(
                     };
 
                     if (knownToolMD5s.has(rec.tool_md5)) {
-                        // 已知工具，只返回基本信息
+                        // Known tool: return basic metadata
                         knownToolsForQuery.push(toolInfo);
                     } else {
-                        // 新工具，返回完整信息
+                        // New tool: include full details
                         const fullToolInfo = {
                             ...toolInfo,
                             description: rec.description ?? null,
@@ -301,7 +300,7 @@ server.registerTool(
                     }
                 });
 
-                // 添加到结果数组
+                // Append to the response arrays
                 if (newToolsForQuery.length > 0) {
                     newTools.push({
                         query_index: i,
@@ -319,7 +318,7 @@ server.registerTool(
                 }
             }
 
-            // 批量记录新检索的工具到session历史
+            // Persist new tool retrievals to the session history
             if (newTools.length > 0) {
                 const newToolsToRecord = [];
                 newTools.forEach(queryResult => {
@@ -336,7 +335,7 @@ server.registerTool(
                 }
             }
 
-            // 构建返回结果
+            // Build the response payload
             const result = {
                 session_id: finalSessionId,
                 new_tools: newTools,
@@ -348,23 +347,23 @@ server.registerTool(
                 }
             };
 
-            // 只在第一次使用该 session 时才返回服务器描述
+            // Only include the server description on the first session interaction
             if (isFirstTimeSession) {
                 result.server_description = enhancedServerDescription;
             }
 
-            appLogger.info(`✅ 检索完成 - 新工具: ${result.summary.new_tools_count}, 已知工具: ${result.summary.known_tools_count}`);
+            appLogger.info(`✅ Retrieval complete - new tools: ${result.summary.new_tools_count}, known tools: ${result.summary.known_tools_count}`);
 
             return {
                 content: [
                     { type: 'text', text: JSON.stringify(result) },
-                    { type: 'text', text: `📋 Session ID: ${finalSessionId} (请保存此ID用于后续检索)` }
+                    { type: 'text', text: `📋 Session ID: ${finalSessionId} (store this ID for follow-up retrievals)` }
                 ]
             };
 
         } catch (error) {
-            const message = `工具检索失败: ${error.message}`;
-            appLogger.error({ err: error }, '❌ Retriever工具执行失败');
+            const message = `Tool retrieval failed: ${error.message}`;
+            appLogger.error({ err: error }, '❌ Retriever tool execution failed');
 
             return {
                 content: [
@@ -381,11 +380,11 @@ server.registerTool(
 server.registerTool(
     'executor',
     {
-        title: 'MCP工具执行器',
-        description: '代理执行具体的MCP工具调用',
+        title: 'MCP Tool Executor',
+        description: 'Proxy that executes the selected MCP tool',
         inputSchema: {
-            md5: z.string().min(1, '工具md5不能为空').describe("工具md5"),
-            parameters: z.record(z.unknown()).describe("工具参数")
+            md5: z.string().min(1, 'Tool MD5 must not be empty').describe('Tool MD5'),
+            parameters: z.record(z.unknown()).describe('Tool parameters')
         }
     },
     async ({ md5, parameters }) => {
@@ -393,26 +392,26 @@ server.registerTool(
             await ensureMCPClientReady();
             const mcpClient = await ensureMCPClientReady();
 
-            // 获取可用工具列表
+            // Load the list of available tools
             const tools = await mcpClient.getTools();
-            // 根据md5查找工具
+            // Locate the tool by MD5 hash
             const tool = tools.find(t => crypto.createHash('md5').update(`${t.name}${t.description}`.trim(), 'utf8').digest('hex') === md5);
             if (!tool) {
                 return {
-                    content: [{ type: 'text', text: `未找到md5为${md5}的工具` }],
+                    content: [{ type: 'text', text: `No tool found with MD5 ${md5}` }],
                     isError: true
                 };
             }
 
-            // 执行工具调用
+            // Execute the tool invocation
             const result = await tool.invoke(parameters);
 
             return {
                 content: [{ type: 'text', text: JSON.stringify(result) }]
             };
         } catch (error) {
-            appLogger.error({ err: error }, '工具执行失败');
-            const errorMessage = `工具执行失败: ${error.message}`;
+            appLogger.error({ err: error }, 'Tool execution failed');
+            const errorMessage = `Tool execution failed: ${error.message}`;
             return {
                 content: [{ type: 'text', text: errorMessage }],
                 isError: true
@@ -493,61 +492,61 @@ adminRouter.post('/sync', async (_req, res) => {
         const client = await ensureMCPClientReady();
 
         if (!client) {
-            return res.status(503).json({ error: 'MCP客户端未就绪，无法执行同步' });
+            return res.status(503).json({ error: 'MCP client is not ready; sync unavailable' });
         }
 
         const recommender = await ensureToolRecommenderReady();
         const results = await recommender.reindex();
 
         res.json({
-            message: '工具索引同步完成',
+            message: 'Tool index synchronization finished',
             indexed: Array.isArray(results) ? results.length : 0
         });
     } catch (error) {
-        appLogger.error({ err: error }, '触发工具索引同步失败');
+        appLogger.error({ err: error }, 'Failed to trigger tool reindex');
         res.status(500).json(maskError());
     }
 });
 
 // Input validation schemas
 const createMcpServerSchema = z.object({
-    server_name: z.string().min(1, '服务器名称不能为空'),
-    server_type: z.enum(['http', 'stdio'], { errorMap: () => ({ message: '服务器类型必须是 http 或 stdio' }) }),
-    url: z.string().url('URL格式不正确').optional().or(z.literal('')),
-    command: z.string().min(1, '命令不能为空').optional().or(z.literal('')),
+    server_name: z.string().min(1, 'Server name is required'),
+    server_type: z.enum(['http', 'stdio'], { errorMap: () => ({ message: 'Server type must be http or stdio' }) }),
+    url: z.string().url('URL is not valid').optional().or(z.literal('')),
+    command: z.string().min(1, 'Command is required').optional().or(z.literal('')),
     args: z.array(z.string()).optional(),
     headers: z.record(z.string()).optional(),
     env: z.record(z.string()).optional(),
     description: z.string().optional(),
     enabled: z.boolean().optional(),
-    group_names: z.array(z.string().min(1, '分组名称不能为空')).optional()
+    group_names: z.array(z.string().min(1, 'Group name is required')).optional()
 });
 
 const updateMcpServerSchema = z.object({
-    server_name: z.string().min(1, '服务器名称不能为空').optional(),
+    server_name: z.string().min(1, 'Server name is required').optional(),
     server_type: z.enum(['http', 'stdio']).optional(),
-    url: z.string().url('URL格式不正确').optional().or(z.literal('')),
-    command: z.string().min(1, '命令不能为空').optional().or(z.literal('')),
+    url: z.string().url('URL is not valid').optional().or(z.literal('')),
+    command: z.string().min(1, 'Command is required').optional().or(z.literal('')),
     args: z.array(z.string()).optional(),
     headers: z.record(z.string()).optional(),
     env: z.record(z.string()).optional(),
     description: z.string().optional(),
     enabled: z.boolean().optional(),
-    group_names: z.array(z.string().min(1, '分组名称不能为空')).optional()
+    group_names: z.array(z.string().min(1, 'Group name is required')).optional()
 });
 
 const createGroupSchema = z.object({
-    group_name: z.string().min(1, '分组名称不能为空'),
+    group_name: z.string().min(1, 'Group name is required'),
     description: z.string().optional()
 });
 
 const updateGroupSchema = z.object({
-    group_name: z.string().min(1, '分组名称不能为空').optional(),
+    group_name: z.string().min(1, 'Group name is required').optional(),
     description: z.string().optional()
 });
 
 const manageServerGroupsSchema = z.object({
-    group_names: z.array(z.string().min(1, '分组名称不能为空')).min(1, '至少提供一个分组名称')
+    group_names: z.array(z.string().min(1, 'Group name is required')).min(1, 'Provide at least one group name')
 });
 
 // Validation middleware
@@ -558,16 +557,16 @@ const validateCreateMcpServer = (req, res, next) => {
 
         // Type-specific validation
         if (validated.server_type === 'http' && !validated.url) {
-            return res.status(400).json({ error: 'HTTP类型的服务器必须提供URL' });
+            return res.status(400).json({ error: 'HTTP servers must include a URL' });
         }
         if (validated.server_type === 'stdio' && !validated.command) {
-            return res.status(400).json({ error: 'STDIO类型的服务器必须提供命令' });
+            return res.status(400).json({ error: 'STDIO servers must include a command' });
         }
 
         next();
     } catch (error) {
         return res.status(400).json({
-            error: '输入验证失败',
+            error: 'Input validation failed',
             details: error.errors?.map(e => e.message) || error.message
         });
     }
@@ -607,7 +606,7 @@ function formatMcpServerRow(row) {
             groupNames = vectorDatabase.getGroupNamesForServer(row.id);
         }
     } catch (error) {
-        appLogger.error({ err: error }, '获取服务器分组信息失败');
+        appLogger.error({ err: error }, 'Failed to fetch server group metadata');
     }
 
     groupNames = Array.from(new Set(groupNames)).sort();
@@ -642,7 +641,7 @@ function formatMcpGroupRow(row) {
     };
 }
 
-// GET /api/mcp-servers - 获取所有MCP服务器
+// GET /api/mcp-servers - List all MCP servers
 adminRouter.get('/mcp-servers', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -666,12 +665,12 @@ adminRouter.get('/mcp-servers', async (req, res) => {
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-        // 获取总数
+        // Fetch total count
         const countSql = `SELECT COUNT(*) as total FROM mcp_servers ms ${whereClause}`;
         const countResult = db.prepare(countSql).get(...params);
         const total = countResult.total;
 
-        // 获取分页数据
+        // Fetch paginated results
         const dataSql = `
             SELECT ms.*, GROUP_CONCAT(DISTINCT mg.group_name) AS group_names
             FROM mcp_servers ms
@@ -697,12 +696,12 @@ adminRouter.get('/mcp-servers', async (req, res) => {
             }
         });
     } catch (error) {
-        appLogger.error({ err: error }, '获取MCP服务器列表失败');
+        appLogger.error({ err: error }, 'Failed to fetch MCP server list');
         res.status(500).json(maskError());
     }
 });
 
-// GET /api/mcp-servers/:id - 根据ID获取MCP服务器
+// GET /api/mcp-servers/:id - Retrieve a specific MCP server
 adminRouter.get('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -711,24 +710,24 @@ adminRouter.get('/mcp-servers/:id', async (req, res) => {
         const { id } = req.params;
 
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的服务器ID' });
+            return res.status(400).json({ error: 'Invalid server ID' });
         }
 
         const row = getServerRowWithGroups(db, parseInt(id));
 
         if (!row) {
-            return res.status(404).json({ error: '服务器不存在' });
+            return res.status(404).json({ error: 'Server not found' });
         }
 
         const server = formatMcpServerRow(row);
         res.json({ data: server });
     } catch (error) {
-        appLogger.error({ err: error }, '获取MCP服务器失败');
+        appLogger.error({ err: error }, 'Failed to fetch MCP server');
         res.status(500).json(maskError());
     }
 });
 
-// POST /api/mcp-servers - 创建MCP服务器
+// POST /api/mcp-servers - Create a new MCP server
 adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -736,10 +735,10 @@ adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
 
         const data = req.validatedBody;
 
-        // 检查服务器名称是否已存在
+        // Check for duplicate server names
         const existing = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ?').get(data.server_name);
         if (existing) {
-            return res.status(409).json({ error: '服务器名称已存在' });
+            return res.status(409).json({ error: 'Server name already exists' });
         }
 
         let groupIds = [];
@@ -747,7 +746,7 @@ adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
             const uniqueGroupNames = Array.from(new Set(data.group_names.map(name => name.trim()).filter(Boolean)));
 
             if (uniqueGroupNames.length === 0) {
-                return res.status(400).json({ error: '分组名称不能为空' });
+                return res.status(400).json({ error: 'Group name is required' });
             }
 
             const placeholders = uniqueGroupNames.map(() => '?').join(', ');
@@ -756,13 +755,13 @@ adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
             const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
 
             if (missing.length > 0) {
-                return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+                return res.status(400).json({ error: `Groups not found: ${missing.join(', ')}` });
             }
 
             groupIds = rows.map(row => row.id);
         }
 
-        // 准备插入数据
+        // Prepare row for insertion
         const insertData = {
             server_name: data.server_name,
             server_type: data.server_type,
@@ -802,23 +801,23 @@ adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
             insertMany(groupIds);
         }
 
-        // 获取创建的服务器数据
+        // Load the newly created server row
         const newRow = getServerRowWithGroups(db, newServerId) || db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(newServerId);
         const server = formatMcpServerRow(newRow);
 
-        appLogger.info(`✅ 创建MCP服务器: ${data.server_name} (ID: ${newServerId})`);
+        appLogger.info(`✅ Created MCP server: ${data.server_name} (ID: ${newServerId})`);
 
         res.status(201).json({
-            message: '服务器创建成功',
+            message: 'Server created',
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '创建MCP服务器失败');
+        appLogger.error({ err: error }, 'Failed to create MCP server');
         res.status(500).json(maskError());
     }
 });
 
-// PATCH /api/mcp-servers/:id - 更新MCP服务器
+// PATCH /api/mcp-servers/:id - Update an MCP server
 adminRouter.patch('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -827,32 +826,32 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
         const { id } = req.params;
 
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的服务器ID' });
+            return res.status(400).json({ error: 'Invalid server ID' });
         }
 
-        // 获取现有服务器数据
+        // Load the existing server row
         const existingRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
         if (!existingRow) {
-            return res.status(404).json({ error: '服务器不存在' });
+            return res.status(404).json({ error: 'Server not found' });
         }
 
         req.existingServer = existingRow;
 
-        // 验证输入数据
+        // Validate the payload
         try {
             const validated = updateMcpServerSchema.parse(req.body);
             req.validatedBody = validated;
 
             // Type-specific validation if both type and respective fields are provided
             if (validated.server_type === 'http' && !validated.url && !req.existingServer?.url) {
-                return res.status(400).json({ error: 'HTTP类型的服务器必须提供URL' });
+                return res.status(400).json({ error: 'HTTP servers must include a URL' });
             }
             if (validated.server_type === 'stdio' && !validated.command && !req.existingServer?.command) {
-                return res.status(400).json({ error: 'STDIO类型的服务器必须提供命令' });
+                return res.status(400).json({ error: 'STDIO servers must include a command' });
             }
         } catch (error) {
             return res.status(400).json({
-                error: '输入验证失败',
+                error: 'Input validation failed',
                 details: error.errors?.map(e => e.message) || error.message
             });
         }
@@ -866,7 +865,7 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
 
             if (uniqueGroupNames.length === 0) {
                 if (originalLength > 0) {
-                    return res.status(400).json({ error: '分组名称不能为空' });
+                    return res.status(400).json({ error: 'Group name is required' });
                 }
                 updatedGroupIds = [];
             } else {
@@ -876,22 +875,22 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
                 const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
 
                 if (missing.length > 0) {
-                    return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+                    return res.status(400).json({ error: `Groups not found: ${missing.join(', ')}` });
                 }
 
                 updatedGroupIds = rows.map(row => row.id);
             }
         }
 
-        // 检查服务器名称是否已被其他服务器使用
+        // Ensure the server name is not used by another record
         if (data.server_name && data.server_name !== existingRow.server_name) {
             const nameExists = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ? AND id != ?').get(data.server_name, parseInt(id));
             if (nameExists) {
-                return res.status(409).json({ error: '服务器名称已存在' });
+                return res.status(409).json({ error: 'Server name already exists' });
             }
         }
 
-        // 构建更新字段
+        // Build the update payload
         const updateFields = [];
         const updateValues = [];
 
@@ -933,7 +932,7 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
         }
 
         if (updateFields.length === 0 && updatedGroupIds === null) {
-            return res.status(400).json({ error: '没有提供要更新的字段' });
+            return res.status(400).json({ error: 'No update fields provided' });
         }
 
         let updateStatement = null;
@@ -975,26 +974,26 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
             updatedRow = runUpdateTransaction();
         } catch (error) {
             if (error.message === 'NO_CHANGES') {
-                return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+                return res.status(500).json({ error: 'Update failed; no rows modified' });
             }
             throw error;
         }
 
         const server = formatMcpServerRow(updatedRow);
 
-        appLogger.info(`✅ 更新MCP服务器: ${server.server_name} (ID: ${id})`);
+        appLogger.info(`✅ Updated MCP server: ${server.server_name} (ID: ${id})`);
 
         res.json({
-            message: '服务器更新成功',
+            message: 'Server updated',
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新MCP服务器失败');
+        appLogger.error({ err: error }, 'Failed to update MCP server');
         res.status(500).json(maskError());
     }
 });
 
-// POST /api/mcp-servers/:id/groups - 添加服务器分组
+// POST /api/mcp-servers/:id/groups - Add server groups
 adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1004,12 +1003,12 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
         const serverId = parseInt(id);
 
         if (!id || isNaN(serverId)) {
-            return res.status(400).json({ error: '无效的服务器ID' });
+            return res.status(400).json({ error: 'Invalid server ID' });
         }
 
         const existingRow = getServerRowWithGroups(db, serverId);
         if (!existingRow) {
-            return res.status(404).json({ error: '服务器不存在' });
+            return res.status(404).json({ error: 'Server not found' });
         }
 
         let body;
@@ -1017,7 +1016,7 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
             body = manageServerGroupsSchema.parse(req.body);
         } catch (error) {
             return res.status(400).json({
-                error: '输入验证失败',
+                error: 'Input validation failed',
                 details: error.errors?.map(e => e.message) || error.message
             });
         }
@@ -1025,7 +1024,7 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
         const uniqueGroupNames = Array.from(new Set(body.group_names.map(name => name.trim()).filter(Boolean)));
 
         if (uniqueGroupNames.length === 0) {
-            return res.status(400).json({ error: '分组名称不能为空' });
+            return res.status(400).json({ error: 'Group name is required' });
         }
 
         const placeholders = uniqueGroupNames.map(() => '?').join(', ');
@@ -1034,7 +1033,7 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
         const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
 
         if (missing.length > 0) {
-            return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+            return res.status(400).json({ error: `Groups not found: ${missing.join(', ')}` });
         }
 
         const addGroups = db.transaction((rows) => {
@@ -1049,16 +1048,16 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
         const server = formatMcpServerRow(updatedRow);
 
         res.json({
-            message: '服务器分组更新成功',
+            message: 'Server groups updated',
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新服务器分组失败');
+        appLogger.error({ err: error }, 'Failed to update server groups');
         res.status(500).json(maskError());
     }
 });
 
-// DELETE /api/mcp-servers/:id/groups - 移除服务器分组
+// DELETE /api/mcp-servers/:id/groups - Remove server groups
 adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1068,12 +1067,12 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
         const serverId = parseInt(id);
 
         if (!id || isNaN(serverId)) {
-            return res.status(400).json({ error: '无效的服务器ID' });
+            return res.status(400).json({ error: 'Invalid server ID' });
         }
 
         const existingRow = getServerRowWithGroups(db, serverId);
         if (!existingRow) {
-            return res.status(404).json({ error: '服务器不存在' });
+            return res.status(404).json({ error: 'Server not found' });
         }
 
         let body;
@@ -1081,7 +1080,7 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
             body = manageServerGroupsSchema.parse(req.body);
         } catch (error) {
             return res.status(400).json({
-                error: '输入验证失败',
+                error: 'Input validation failed',
                 details: error.errors?.map(e => e.message) || error.message
             });
         }
@@ -1089,7 +1088,7 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
         const uniqueGroupNames = Array.from(new Set(body.group_names.map(name => name.trim()).filter(Boolean)));
 
         if (uniqueGroupNames.length === 0) {
-            return res.status(400).json({ error: '分组名称不能为空' });
+            return res.status(400).json({ error: 'Group name is required' });
         }
 
         const placeholders = uniqueGroupNames.map(() => '?').join(', ');
@@ -1098,7 +1097,7 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
         const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
 
         if (missing.length > 0) {
-            return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+            return res.status(400).json({ error: `Groups not found: ${missing.join(', ')}` });
         }
 
         const groupIds = groupRows.map(row => row.id);
@@ -1107,7 +1106,7 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
         const membershipRows = db.prepare(membershipSql).all(serverId, ...groupIds);
 
         if (membershipRows.length === 0) {
-            return res.status(400).json({ error: '服务器未加入指定的分组' });
+            return res.status(400).json({ error: 'Server is not a member of the specified group' });
         }
 
         const removeGroups = db.transaction((rows) => {
@@ -1122,16 +1121,16 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
         const server = formatMcpServerRow(updatedRow);
 
         res.json({
-            message: '服务器分组移除成功',
+            message: 'Server groups updated',
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '移除服务器分组失败');
+        appLogger.error({ err: error }, 'Failed to remove server groups');
         res.status(500).json(maskError());
     }
 });
 
-// DELETE /api/mcp-servers/:id - 删除MCP服务器
+// DELETE /api/mcp-servers/:id - Delete an MCP server
 adminRouter.delete('/mcp-servers/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1140,37 +1139,37 @@ adminRouter.delete('/mcp-servers/:id', async (req, res) => {
         const { id } = req.params;
 
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的服务器ID' });
+            return res.status(400).json({ error: 'Invalid server ID' });
         }
 
-        // 检查服务器是否存在
+        // Confirm the server exists
         const existingRow = db.prepare('SELECT server_name FROM mcp_servers WHERE id = ?').get(parseInt(id));
         if (!existingRow) {
-            return res.status(404).json({ error: '服务器不存在' });
+            return res.status(404).json({ error: 'Server not found' });
         }
 
-        // 删除服务器
+        // Remove the server record
         const stmt = db.prepare('DELETE FROM mcp_servers WHERE id = ?');
         const result = stmt.run(parseInt(id));
 
         if (result.changes === 0) {
-            return res.status(500).json({ error: '删除失败，可能没有数据被删除' });
+            return res.status(500).json({ error: 'Delete failed; no rows removed' });
         }
 
-        appLogger.info(`✅ 删除MCP服务器: ${existingRow.server_name} (ID: ${id})`);
+        appLogger.info(`✅ Deleted MCP server: ${existingRow.server_name} (ID: ${id})`);
 
         res.json({
-            message: '服务器删除成功',
+            message: 'Server deleted',
             deleted_id: parseInt(id),
             deleted_server_name: existingRow.server_name
         });
     } catch (error) {
-        appLogger.error({ err: error }, '删除MCP服务器失败');
+        appLogger.error({ err: error }, 'Failed to delete MCP server');
         res.status(500).json(maskError());
     }
 });
 
-// GET /api/mcp-groups - 获取所有分组
+// GET /api/mcp-groups - List all groups
 adminRouter.get('/mcp-groups', async (_req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1187,12 +1186,12 @@ adminRouter.get('/mcp-groups', async (_req, res) => {
 
         res.json({ data: rows.map(formatMcpGroupRow) });
     } catch (error) {
-        appLogger.error({ err: error }, '获取分组列表失败');
+        appLogger.error({ err: error }, 'Failed to fetch group list');
         res.status(500).json(maskError());
     }
 });
 
-// GET /api/mcp-groups/:id - 获取分组详情
+// GET /api/mcp-groups/:id - Retrieve group details
 adminRouter.get('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1200,7 +1199,7 @@ adminRouter.get('/mcp-groups/:id', async (req, res) => {
 
         const { id } = req.params;
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的分组ID' });
+            return res.status(400).json({ error: 'Invalid group ID' });
         }
 
         const row = db.prepare(`
@@ -1211,17 +1210,17 @@ adminRouter.get('/mcp-groups/:id', async (req, res) => {
         `).get(parseInt(id));
 
         if (!row) {
-            return res.status(404).json({ error: '分组不存在' });
+            return res.status(404).json({ error: 'Group not found' });
         }
 
         res.json({ data: formatMcpGroupRow(row) });
     } catch (error) {
-        appLogger.error({ err: error }, '获取分组失败');
+        appLogger.error({ err: error }, 'Failed to fetch group');
         res.status(500).json(maskError());
     }
 });
 
-// POST /api/mcp-groups - 创建分组
+// POST /api/mcp-groups - Create a group
 adminRouter.post('/mcp-groups', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1231,12 +1230,12 @@ adminRouter.post('/mcp-groups', async (req, res) => {
         const groupName = validated.group_name.trim();
 
         if (!groupName) {
-            return res.status(400).json({ error: '分组名称不能为空' });
+            return res.status(400).json({ error: 'Group name is required' });
         }
 
         const existing = db.prepare('SELECT id FROM mcp_groups WHERE group_name = ?').get(groupName);
         if (existing) {
-            return res.status(409).json({ error: '分组名称已存在' });
+            return res.status(409).json({ error: 'Group name already exists' });
         }
 
         const description = validated.description?.trim() || null;
@@ -1250,17 +1249,17 @@ adminRouter.post('/mcp-groups', async (req, res) => {
             WHERE g.id = ?
         `).get(result.lastInsertRowid);
 
-        appLogger.info(`✅ 创建分组: ${groupName} (ID: ${result.lastInsertRowid})`);
+        appLogger.info(`✅ Created group: ${groupName} (ID: ${result.lastInsertRowid})`);
 
         res.status(201).json({
-            message: '分组创建成功',
+            message: 'Group created',
             data: formatMcpGroupRow(row)
         });
     } catch (error) {
-        appLogger.error({ err: error }, '创建分组失败');
+        appLogger.error({ err: error }, 'Failed to create group');
         if (error.errors) {
             return res.status(400).json({
-                error: '输入验证失败',
+                error: 'Input validation failed',
                 details: error.errors.map(e => e.message)
             });
         }
@@ -1268,7 +1267,7 @@ adminRouter.post('/mcp-groups', async (req, res) => {
     }
 });
 
-// PATCH /api/mcp-groups/:id - 更新分组
+// PATCH /api/mcp-groups/:id - Update a group
 adminRouter.patch('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1276,12 +1275,12 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
 
         const { id } = req.params;
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的分组ID' });
+            return res.status(400).json({ error: 'Invalid group ID' });
         }
 
         const existing = db.prepare('SELECT * FROM mcp_groups WHERE id = ?').get(parseInt(id));
         if (!existing) {
-            return res.status(404).json({ error: '分组不存在' });
+            return res.status(404).json({ error: 'Group not found' });
         }
 
         const validated = updateGroupSchema.parse(req.body);
@@ -1292,12 +1291,12 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
         if (validated.group_name !== undefined) {
             const trimmedName = validated.group_name.trim();
             if (!trimmedName) {
-                return res.status(400).json({ error: '分组名称不能为空' });
+                return res.status(400).json({ error: 'Group name is required' });
             }
 
             const nameExists = db.prepare('SELECT id FROM mcp_groups WHERE group_name = ? AND id != ?').get(trimmedName, parseInt(id));
             if (nameExists) {
-                return res.status(409).json({ error: '分组名称已存在' });
+                return res.status(409).json({ error: 'Group name already exists' });
             }
 
             updateFields.push('group_name = ?');
@@ -1310,7 +1309,7 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
         }
 
         if (updateFields.length === 0) {
-            return res.status(400).json({ error: '没有提供要更新的字段' });
+            return res.status(400).json({ error: 'No update fields provided' });
         }
 
         updateFields.push('updated_at = CURRENT_TIMESTAMP');
@@ -1320,7 +1319,7 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
         const result = stmt.run(...updateValues);
 
         if (result.changes === 0) {
-            return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
+            return res.status(500).json({ error: 'Update failed; no rows modified' });
         }
 
         const row = db.prepare(`
@@ -1330,17 +1329,17 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
             WHERE g.id = ?
         `).get(parseInt(id));
 
-        appLogger.info(`✅ 更新分组: ${row.group_name} (ID: ${id})`);
+        appLogger.info(`✅ Updated group: ${row.group_name} (ID: ${id})`);
 
         res.json({
-            message: '分组更新成功',
+            message: 'Group updated',
             data: formatMcpGroupRow(row)
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新分组失败');
+        appLogger.error({ err: error }, 'Failed to update group');
         if (error.errors) {
             return res.status(400).json({
-                error: '输入验证失败',
+                error: 'Input validation failed',
                 details: error.errors.map(e => e.message)
             });
         }
@@ -1348,7 +1347,7 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
     }
 });
 
-// DELETE /api/mcp-groups/:id - 删除分组
+// DELETE /api/mcp-groups/:id - Delete a group
 adminRouter.delete('/mcp-groups/:id', async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
@@ -1356,21 +1355,21 @@ adminRouter.delete('/mcp-groups/:id', async (req, res) => {
 
         const { id } = req.params;
         if (!id || isNaN(parseInt(id))) {
-            return res.status(400).json({ error: '无效的分组ID' });
+            return res.status(400).json({ error: 'Invalid group ID' });
         }
 
         const existing = db.prepare('SELECT group_name FROM mcp_groups WHERE id = ?').get(parseInt(id));
         if (!existing) {
-            return res.status(404).json({ error: '分组不存在' });
+            return res.status(404).json({ error: 'Group not found' });
         }
 
         db.prepare('DELETE FROM mcp_groups WHERE id = ?').run(parseInt(id));
 
-        appLogger.info(`🗑️  删除分组: ${existing.group_name} (ID: ${id})`);
+        appLogger.info(`🗑️  Deleted group: ${existing.group_name} (ID: ${id})`);
 
-        res.json({ message: '分组删除成功' });
+        res.json({ message: 'Group deleted' });
     } catch (error) {
-        appLogger.error({ err: error }, '删除分组失败');
+        appLogger.error({ err: error }, 'Failed to delete group');
         res.status(500).json(maskError());
     }
 });
@@ -1385,7 +1384,7 @@ app.use((err, _req, res, next) => {
         return next(err);
     }
 
-    appLogger.error({ err }, '未处理的服务端错误');
+    appLogger.error({ err }, 'Unhandled server error');
     res.status(err?.status || 500).json(maskError());
 });
 

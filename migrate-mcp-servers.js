@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// MCP服务器配置迁移脚本
-// 从配置文件迁移到数据库
+// MCP server configuration migration script
+// Migrate from JSON configuration files into the database
 
 import fs from 'fs';
 import path from 'path';
@@ -12,59 +12,59 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 async function migrateMcpServers() {
-    console.log('🚀 开始从JSON文件迁移MCP服务器配置到数据库...');
-    console.log('ℹ️ 注意：该功能仅用于从旧的mcp-servers.json文件迁移配置');
-    console.log('ℹ️ 现在推荐直接使用数据库API管理服务器配置');
+    console.log('🚀 Starting migration of MCP server configuration from JSON into the database...');
+    console.log('ℹ️ Note: this utility only migrates from the legacy mcp-servers.json file');
+    console.log('ℹ️ Use the database-backed API for ongoing configuration management');
 
     try {
-        // 1. 读取配置文件
+        // 1. Read the configuration file
         const configPath = path.join(process.cwd(), 'mcp-servers.json');
         let mcpConfig;
 
         try {
             const configData = fs.readFileSync(configPath, 'utf8');
             mcpConfig = JSON.parse(configData);
-            console.log(`📁 成功读取配置文件: ${configPath}`);
+            console.log(`📁 Read configuration file: ${configPath}`);
         } catch (error) {
             if (error.code === 'ENOENT') {
-                console.log('ℹ️ 配置文件不存在，无需迁移');
-                console.log('💡 如需添加MCP服务器，请使用API接口：');
+                console.log('ℹ️ Configuration file not found; nothing to migrate');
+                console.log('💡 Use the admin API to add MCP servers:');
                 console.log('   POST /api/mcp-servers');
                 return;
             }
-            throw new Error(`读取配置文件失败: ${error.message}`);
+            throw new Error(`Failed to read configuration file: ${error.message}`);
         }
 
         if (!mcpConfig.servers || Object.keys(mcpConfig.servers).length === 0) {
-            console.log('ℹ️ 配置文件中没有服务器配置，无需迁移');
-            console.log('💡 如需添加MCP服务器，请使用API接口：');
+            console.log('ℹ️ No servers found in configuration; nothing to migrate');
+            console.log('💡 Use the admin API to add MCP servers:');
             console.log('   POST /api/mcp-servers');
             return;
         }
 
-        // 2. 初始化数据库
-        console.log('🗄️ 初始化数据库...');
+        // 2. Initialize the database
+        console.log('🗄️ Initializing database...');
         const vectorDatabase = new VectorDatabase();
         await vectorDatabase.initialize();
         const db = vectorDatabase.db;
 
-        // 3. 迁移每个服务器配置
+        // 3. Migrate each server entry
         const servers = mcpConfig.servers;
         let migratedCount = 0;
         let skippedCount = 0;
 
         for (const [serverName, serverConfig] of Object.entries(servers)) {
             try {
-                // 检查服务器是否已存在
+                // Check whether the server already exists
                 const existing = db.prepare('SELECT id FROM mcp_servers WHERE server_name = ?').get(serverName);
 
                 if (existing) {
-                    console.log(`⚠️ 服务器 ${serverName} 已存在于数据库中，跳过迁移`);
+                    console.log(`⚠️ Server ${serverName} already exists; skipping`);
                     skippedCount++;
                     continue;
                 }
 
-                // 确定服务器类型
+                // Determine the server type
                 let serverType, url, command, args;
 
                 if (serverConfig.url) {
@@ -75,18 +75,18 @@ async function migrateMcpServers() {
                     command = serverConfig.command;
                     args = JSON.stringify(serverConfig.args);
                 } else {
-                    console.log(`❌ 服务器 ${serverName} 配置无效，跳过迁移`);
+                    console.log(`❌ Server ${serverName} has invalid configuration; skipping`);
                     skippedCount++;
                     continue;
                 }
 
-                // 准备其他字段
+                // Prepare remaining fields
                 const headers = serverConfig.headers ? JSON.stringify(serverConfig.headers) : null;
                 const env = serverConfig.env ? JSON.stringify(serverConfig.env) : null;
                 const description = serverConfig.description || null;
-                const enabled = 1; // 默认启用
+                const enabled = 1; // Enabled by default
 
-                // 插入数据库
+                // Insert into the database
                 const stmt = db.prepare(`
                     INSERT INTO mcp_servers (
                         server_name, server_type, url, command, args,
@@ -99,76 +99,76 @@ async function migrateMcpServers() {
                     headers, env, description, enabled
                 );
 
-                console.log(`✅ 迁移服务器: ${serverName} (ID: ${result.lastInsertRowid}, 类型: ${serverType})`);
+                console.log(`✅ Migrated server: ${serverName} (ID: ${result.lastInsertRowid}, type: ${serverType})`);
                 migratedCount++;
 
             } catch (error) {
-                console.error(`❌ 迁移服务器 ${serverName} 失败:`, error.message);
+                console.error(`❌ Failed to migrate server ${serverName}:`, error.message);
                 skippedCount++;
             }
         }
 
-        // 4. 创建备份
+        // 4. Create a backup
         if (migratedCount > 0) {
             const backupPath = path.join(process.cwd(), 'mcp-servers.json.backup');
             fs.copyFileSync(configPath, backupPath);
-            console.log(`💾 配置文件已备份到: ${backupPath}`);
+            console.log(`💾 Backup written to: ${backupPath}`);
 
-            // 提示用户可以删除原配置文件
-            console.log('\n📝 迁移完成提示:');
-            console.log('   - 配置已成功迁移到数据库');
-            console.log('   - 原配置文件已备份');
-            console.log('   - 确认迁移无误后，可以删除原配置文件');
-            console.log(`   - 建议的删除命令: rm ${configPath}`);
+            // Inform the operator that the original file can be removed
+            console.log('\n📝 Migration summary:');
+            console.log('   - Configuration successfully migrated to the database');
+            console.log('   - Original configuration file backed up');
+            console.log('   - After verifying the data you may delete the original file');
+            console.log(`   - Suggested removal command: rm ${configPath}`);
         }
 
-        console.log(`\n🎉 迁移完成! 成功: ${migratedCount}, 跳过: ${skippedCount}`);
+        console.log(`\n🎉 Migration complete! Success: ${migratedCount}, skipped: ${skippedCount}`);
 
-        // 5. 清理
+        // 5. Cleanup
         vectorDatabase.close();
 
     } catch (error) {
-        console.error('❌ 迁移失败:', error.message);
+        console.error('❌ Migration failed:', error.message);
         process.exit(1);
     }
 }
 
-// 显示使用说明
+// Usage instructions
 function showUsage() {
     console.log(`
-📖 MCP服务器配置迁移工具 (已弃用)
+📖 MCP server configuration migration utility (deprecated)
 
-⚠️  注意：此工具仅用于从旧的mcp-servers.json文件迁移配置
-💡 推荐使用API接口直接管理MCP服务器配置：
-     GET    /api/mcp-servers     - 获取服务器列表
-     POST   /api/mcp-servers     - 创建新服务器
-     GET    /api/mcp-servers/:id - 获取特定服务器
-     PUT    /api/mcp-servers/:id - 更新服务器
-     DELETE /api/mcp-servers/:id - 删除服务器
+⚠️  Note: use this tool only for migrating from the legacy mcp-servers.json
+💡 Use the admin API to manage MCP servers:
+     GET    /api/mcp-servers     - List servers
+     POST   /api/mcp-servers     - Create server
+     GET    /api/mcp-servers/:id - Get server
+     PUT    /api/mcp-servers/:id - Update server
+     DELETE /api/mcp-servers/:id - Delete server
 
-用法 (仅迁移旧配置时使用):
+Usage (only when migrating legacy configuration):
   node migrate-mcp-servers.js
 
-功能:
-  - 从 mcp-servers.json 文件读取配置 (已弃用)
-  - 将配置迁移到数据库 mcp_servers 表
-  - 自动跳过已存在的服务器
-  - 创建原配置文件的备份
+Features:
+  - Read configuration from mcp-servers.json (deprecated)
+  - Write configuration into the mcp_servers table
+  - Skip servers that already exist
+  - Create a backup of the original file
 
-注意:
-  - 仅用于从旧配置文件迁移
-  - 新项目请直接使用API接口管理配置
-  - 迁移前请确保数据库已正确初始化
+Notes:
+  - Only for migrating from the old configuration file
+  - New deployments should use the API directly
+  - Ensure the database is initialized before migrating
 `);
 }
 
-// 检查命令行参数
+// Validate CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
     showUsage();
     process.exit(0);
 }
 
-// 执行迁移
+// Execute migration
 if (import.meta.url === `file://${process.argv[1]}`) {
     migrateMcpServers().catch(console.error);
 }
