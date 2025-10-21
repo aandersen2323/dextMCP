@@ -187,12 +187,30 @@ curl -X POST http://localhost:3000/api/mcp-servers \
 
 #### Update Server
 ```bash
-curl -X PUT http://localhost:3000/api/mcp-servers/1 \
+curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -d '{
     "description": "Updated description",
     "enabled": false,
     "group_names": ["devtools"]
+  }'
+```
+
+#### Add Server to Groups
+```bash
+curl -X POST http://localhost:3000/api/mcp-servers/1/groups \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group_names": ["devtools", "docs"]
+  }'
+```
+
+#### Remove Server from Groups
+```bash
+curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group_names": ["docs"]
   }'
 ```
 

@@ -488,6 +488,10 @@ const updateGroupSchema = z.object({
     description: z.string().optional()
 });
 
+const manageServerGroupsSchema = z.object({
+    group_names: z.array(z.string().min(1, '分组名称不能为空')).min(1, '至少提供一个分组名称')
+});
+
 // Validation middleware
 const validateCreateMcpServer = (req, res, next) => {
     try {
@@ -512,18 +516,43 @@ const validateCreateMcpServer = (req, res, next) => {
 };
 
 
+function getServerRowWithGroups(db, serverId) {
+    if (!db) return null;
+
+    return db.prepare(`
+        SELECT ms.*, GROUP_CONCAT(DISTINCT mg.group_name) AS group_names
+        FROM mcp_servers ms
+        LEFT JOIN mcp_server_groups msg ON ms.id = msg.server_id
+        LEFT JOIN mcp_groups mg ON mg.id = msg.group_id
+        WHERE ms.id = ?
+        GROUP BY ms.id
+    `).get(serverId);
+}
+
 // Helper function to convert database row to API response
 function formatMcpServerRow(row) {
     if (!row) return null;
 
     let groupNames = [];
+
     try {
-        if (vectorDatabase?.db) {
+        if (row.group_names !== undefined && row.group_names !== null) {
+            if (Array.isArray(row.group_names)) {
+                groupNames = row.group_names;
+            } else if (typeof row.group_names === 'string') {
+                groupNames = row.group_names
+                    .split(',')
+                    .map(name => name.trim())
+                    .filter(Boolean);
+            }
+        } else if (vectorDatabase?.db) {
             groupNames = vectorDatabase.getGroupNamesForServer(row.id);
         }
     } catch (error) {
         console.error('获取服务器分组信息失败:', error.message);
     }
+
+    groupNames = Array.from(new Set(groupNames)).sort();
 
     return {
         id: row.id,
@@ -564,28 +593,35 @@ app.get('/api/mcp-servers', cors(corsOptions), async (req, res) => {
         const { enabled, server_type, page = 1, limit = 50 } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
-        let whereClause = '';
+        const conditions = [];
         const params = [];
 
         if (enabled !== undefined) {
-            whereClause += ' WHERE enabled = ?';
+            conditions.push('ms.enabled = ?');
             params.push(enabled === 'true' ? 1 : 0);
         }
 
         if (server_type) {
-            whereClause += whereClause ? ' AND server_type = ?' : ' WHERE server_type = ?';
+            conditions.push('ms.server_type = ?');
             params.push(server_type);
         }
 
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
         // 获取总数
-        const countSql = `SELECT COUNT(*) as total FROM mcp_servers${whereClause}`;
+        const countSql = `SELECT COUNT(*) as total FROM mcp_servers ms ${whereClause}`;
         const countResult = db.prepare(countSql).get(...params);
         const total = countResult.total;
 
         // 获取分页数据
         const dataSql = `
-            SELECT * FROM mcp_servers${whereClause}
-            ORDER BY created_at DESC
+            SELECT ms.*, GROUP_CONCAT(DISTINCT mg.group_name) AS group_names
+            FROM mcp_servers ms
+            LEFT JOIN mcp_server_groups msg ON ms.id = msg.server_id
+            LEFT JOIN mcp_groups mg ON mg.id = msg.group_id
+            ${whereClause}
+            GROUP BY ms.id
+            ORDER BY ms.created_at DESC
             LIMIT ? OFFSET ?
         `;
         const dataParams = [...params, parseInt(limit), offset];
@@ -620,7 +656,7 @@ app.get('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
             return res.status(400).json({ error: '无效的服务器ID' });
         }
 
-        const row = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
+        const row = getServerRowWithGroups(db, parseInt(id));
 
         if (!row) {
             return res.status(404).json({ error: '服务器不存在' });
@@ -709,7 +745,7 @@ app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (
         }
 
         // 获取创建的服务器数据
-        const newRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(newServerId);
+        const newRow = getServerRowWithGroups(db, newServerId) || db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(newServerId);
         const server = formatMcpServerRow(newRow);
 
         console.log(`✅ 创建MCP服务器: ${data.server_name} (ID: ${newServerId})`);
@@ -724,8 +760,8 @@ app.post('/api/mcp-servers', cors(corsOptions), validateCreateMcpServer, async (
     }
 });
 
-// PUT /api/mcp-servers/:id - 更新MCP服务器
-app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
+// PATCH /api/mcp-servers/:id - 更新MCP服务器
+app.patch('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
     try {
         await ensureVectorDatabaseReady();
         const db = vectorDatabase.db;
@@ -842,36 +878,50 @@ app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
             return res.status(400).json({ error: '没有提供要更新的字段' });
         }
 
+        let updateStatement = null;
+        let updateParams = [];
+
         if (updateFields.length > 0) {
             updateFields.push('updated_at = CURRENT_TIMESTAMP');
-            updateValues.push(parseInt(id));
+            updateStatement = `UPDATE mcp_servers SET ${updateFields.join(', ')} WHERE id = ?`;
+            updateParams = [...updateValues, parseInt(id)];
+        }
 
-            const stmt = db.prepare(`UPDATE mcp_servers SET ${updateFields.join(', ')} WHERE id = ?`);
-            const result = stmt.run(...updateValues);
+        const runUpdateTransaction = db.transaction(() => {
+            if (updateStatement) {
+                const stmt = db.prepare(updateStatement);
+                const result = stmt.run(...updateParams);
 
-            if (result.changes === 0) {
+                if (result.changes === 0) {
+                    throw new Error('NO_CHANGES');
+                }
+            }
+
+            if (updatedGroupIds !== null) {
+                const deleteStmt = db.prepare('DELETE FROM mcp_server_groups WHERE server_id = ?');
+                deleteStmt.run(parseInt(id));
+
+                if (updatedGroupIds.length > 0) {
+                    const insertStmt = db.prepare('INSERT INTO mcp_server_groups (server_id, group_id) VALUES (?, ?)');
+                    updatedGroupIds.forEach(groupId => insertStmt.run(parseInt(id), groupId));
+                }
+
+                db.prepare('UPDATE mcp_servers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(parseInt(id));
+            }
+
+            return getServerRowWithGroups(db, parseInt(id));
+        });
+
+        let updatedRow;
+        try {
+            updatedRow = runUpdateTransaction();
+        } catch (error) {
+            if (error.message === 'NO_CHANGES') {
                 return res.status(500).json({ error: '更新失败，可能没有数据被修改' });
             }
+            throw error;
         }
 
-        if (updatedGroupIds !== null) {
-            const deleteStmt = db.prepare('DELETE FROM mcp_server_groups WHERE server_id = ?');
-            deleteStmt.run(parseInt(id));
-
-            if (updatedGroupIds.length > 0) {
-                const insertStmt = db.prepare('INSERT INTO mcp_server_groups (server_id, group_id) VALUES (?, ?)');
-                const insertMany = db.transaction((ids) => {
-                    ids.forEach(groupId => insertStmt.run(parseInt(id), groupId));
-                });
-                insertMany(updatedGroupIds);
-            }
-
-            // 更新服务器更新时间戳
-            db.prepare('UPDATE mcp_servers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(parseInt(id));
-        }
-
-        // 获取更新后的服务器数据
-        const updatedRow = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(parseInt(id));
         const server = formatMcpServerRow(updatedRow);
 
         console.log(`✅ 更新MCP服务器: ${server.server_name} (ID: ${id})`);
@@ -883,6 +933,143 @@ app.put('/api/mcp-servers/:id', cors(corsOptions), async (req, res) => {
     } catch (error) {
         console.error('更新MCP服务器失败:', error);
         res.status(500).json({ error: '更新服务器失败', details: error.message });
+    }
+});
+
+// POST /api/mcp-servers/:id/groups - 添加服务器分组
+app.post('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+        const serverId = parseInt(id);
+
+        if (!id || isNaN(serverId)) {
+            return res.status(400).json({ error: '无效的服务器ID' });
+        }
+
+        const existingRow = getServerRowWithGroups(db, serverId);
+        if (!existingRow) {
+            return res.status(404).json({ error: '服务器不存在' });
+        }
+
+        let body;
+        try {
+            body = manageServerGroupsSchema.parse(req.body);
+        } catch (error) {
+            return res.status(400).json({
+                error: '输入验证失败',
+                details: error.errors?.map(e => e.message) || error.message
+            });
+        }
+
+        const uniqueGroupNames = Array.from(new Set(body.group_names.map(name => name.trim()).filter(Boolean)));
+
+        if (uniqueGroupNames.length === 0) {
+            return res.status(400).json({ error: '分组名称不能为空' });
+        }
+
+        const placeholders = uniqueGroupNames.map(() => '?').join(', ');
+        const groupRows = db.prepare(`SELECT id, group_name FROM mcp_groups WHERE group_name IN (${placeholders})`).all(...uniqueGroupNames);
+        const foundNames = groupRows.map(row => row.group_name);
+        const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
+
+        if (missing.length > 0) {
+            return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+        }
+
+        const addGroups = db.transaction((rows) => {
+            const insertStmt = db.prepare('INSERT OR IGNORE INTO mcp_server_groups (server_id, group_id) VALUES (?, ?)');
+            rows.forEach(row => insertStmt.run(serverId, row.id));
+            db.prepare('UPDATE mcp_servers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(serverId);
+        });
+
+        addGroups(groupRows);
+
+        const updatedRow = getServerRowWithGroups(db, serverId);
+        const server = formatMcpServerRow(updatedRow);
+
+        res.json({
+            message: '服务器分组更新成功',
+            data: server
+        });
+    } catch (error) {
+        console.error('更新服务器分组失败:', error);
+        res.status(500).json({ error: '更新服务器分组失败', details: error.message });
+    }
+});
+
+// DELETE /api/mcp-servers/:id/groups - 移除服务器分组
+app.delete('/api/mcp-servers/:id/groups', cors(corsOptions), async (req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const db = vectorDatabase.db;
+
+        const { id } = req.params;
+        const serverId = parseInt(id);
+
+        if (!id || isNaN(serverId)) {
+            return res.status(400).json({ error: '无效的服务器ID' });
+        }
+
+        const existingRow = getServerRowWithGroups(db, serverId);
+        if (!existingRow) {
+            return res.status(404).json({ error: '服务器不存在' });
+        }
+
+        let body;
+        try {
+            body = manageServerGroupsSchema.parse(req.body);
+        } catch (error) {
+            return res.status(400).json({
+                error: '输入验证失败',
+                details: error.errors?.map(e => e.message) || error.message
+            });
+        }
+
+        const uniqueGroupNames = Array.from(new Set(body.group_names.map(name => name.trim()).filter(Boolean)));
+
+        if (uniqueGroupNames.length === 0) {
+            return res.status(400).json({ error: '分组名称不能为空' });
+        }
+
+        const placeholders = uniqueGroupNames.map(() => '?').join(', ');
+        const groupRows = db.prepare(`SELECT id, group_name FROM mcp_groups WHERE group_name IN (${placeholders})`).all(...uniqueGroupNames);
+        const foundNames = groupRows.map(row => row.group_name);
+        const missing = uniqueGroupNames.filter(name => !foundNames.includes(name));
+
+        if (missing.length > 0) {
+            return res.status(400).json({ error: `以下分组不存在: ${missing.join(', ')}` });
+        }
+
+        const groupIds = groupRows.map(row => row.id);
+        const membershipPlaceholders = groupIds.map(() => '?').join(', ');
+        const membershipSql = `SELECT group_id FROM mcp_server_groups WHERE server_id = ? AND group_id IN (${membershipPlaceholders})`;
+        const membershipRows = db.prepare(membershipSql).all(serverId, ...groupIds);
+
+        if (membershipRows.length === 0) {
+            return res.status(400).json({ error: '服务器未加入指定的分组' });
+        }
+
+        const removeGroups = db.transaction((rows) => {
+            const deleteStmt = db.prepare('DELETE FROM mcp_server_groups WHERE server_id = ? AND group_id = ?');
+            rows.forEach(row => deleteStmt.run(serverId, row.group_id));
+            db.prepare('UPDATE mcp_servers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(serverId);
+        });
+
+        removeGroups(membershipRows);
+
+        const updatedRow = getServerRowWithGroups(db, serverId);
+        const server = formatMcpServerRow(updatedRow);
+
+        res.json({
+            message: '服务器分组移除成功',
+            data: server
+        });
+    } catch (error) {
+        console.error('移除服务器分组失败:', error);
+        res.status(500).json({ error: '移除服务器分组失败', details: error.message });
     }
 });
 
