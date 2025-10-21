@@ -4,10 +4,14 @@ import { vectorizeString, vectorizeMultipleStrings } from '../lib/embedding.js';
 async function runVectorizationDiagnostics() {
     try {
         console.log('\n🚀 开始测试向量化功能...');
+        const modelName = process.env.EMBEDDING_NG_MODEL_NAME || process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
+        const baseUrl = process.env.EMBEDDING_NG_BASE_URL || process.env.EMBEDDING_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+        const vectorDimension = process.env.EMBEDDING_NG_VECTOR_DIMENSION || process.env.EMBEDDING_VECTOR_DIMENSION || '1024';
+
         console.log(`📋 当前配置:`);
-        console.log(`   - 模型: ${process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715'}`);
-        console.log(`   - 端点: ${process.env.EMBEDDING_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'}`);
-        console.log(`   - 预期维度: ${process.env.EMBEDDING_VECTOR_DIMENSION || '1024'}`);
+        console.log(`   - 模型: ${modelName}`);
+        console.log(`   - 端点: ${baseUrl}`);
+        console.log(`   - 预期维度: ${vectorDimension}`);
 
         const testText = '这是一个测试文本，用于验证doubao embedding模型的功能';
         const vector = await vectorizeString(testText);
@@ -53,7 +57,7 @@ async function runVectorSearchDiagnostics(mcpClient) {
             const recommendations = await vectorSearch.recommendTools(
                 query,
                 mcpClient,
-                process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715',
+                process.env.EMBEDDING_NG_MODEL_NAME || process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715',
                 { topK: 5, threshold: 0.1, includeDetails: true }
             );
 

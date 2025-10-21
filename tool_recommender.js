@@ -30,7 +30,10 @@ class ToolRecommender {
                 modelName = null   // 模型名称
             } = options;
             
-            this.modelName = modelName || process.env.EMBEDDING_NG_MODEL_NAME || 'doubao-embedding-text-240715';
+            this.modelName = modelName
+                || process.env.EMBEDDING_NG_MODEL_NAME
+                || process.env.EMBEDDING_MODEL_NAME
+                || 'doubao-embedding-text-240715';
             
             // 自动为MCP工具建立向量索引
             if (autoIndex && mcpClient) {

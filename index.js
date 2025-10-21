@@ -28,7 +28,8 @@ function greet(name) {
 }
 
 async function bootstrapDiagnostics(mcpClient) {
-    if (process.env.EMBEDDING_API_KEY && process.env.EMBEDDING_API_KEY !== 'your-doubao-api-key-here') {
+    const embeddingApiKey = process.env.EMBEDDING_NG_API_KEY ?? process.env.EMBEDDING_API_KEY;
+    if (embeddingApiKey && embeddingApiKey !== 'your-doubao-api-key-here') {
         console.log('\n检测到API密钥配置，开始向量化测试...');
         await runVectorizationDiagnostics();
         if (mcpClient) {

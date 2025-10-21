@@ -119,14 +119,15 @@ npm install
 
 ### 3. Configure Environment Variables
 - Copy `.env.example` to `.env`
-- Fill in the variables from the table below (at minimum set `EMBEDDING_API_KEY` and a strong `ADMIN_API_KEY`)
+- Fill in the variables from the table below (at minimum set `EMBEDDING_NG_API_KEY` and a strong `ADMIN_API_KEY`).
+  Legacy variables with the `EMBEDDING_` prefix are still read for backward compatibility, but new deployments should prefer the `EMBEDDING_NG_` naming.
 
 | Variable | Description | Default | Required |
 | -------- | ----------- | ------- | -------- |
-| `EMBEDDING_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
-| `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
-| `EMBEDDING_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
-| `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
+| `EMBEDDING_NG_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
+| `EMBEDDING_NG_BASE_URL` | Embedding API Base URL | - | ❌ |
+| `EMBEDDING_NG_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
 | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3398` | ❌ |
 | `TOOLS_DB_PATH` | Custom path for the SQLite database file | `<project>/tools_vector.db` | ❌ |

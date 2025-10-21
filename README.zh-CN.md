@@ -118,14 +118,15 @@ npm install
 
 ### 3. 配置环境变量
 - 复制 `.env.example` 为 `.env`
-- 按需填写下表中的变量（至少配置 `EMBEDDING_API_KEY` 和一个足够复杂的 `ADMIN_API_KEY`）
+- 按需填写下表中的变量（至少配置 `EMBEDDING_NG_API_KEY` 和一个足够复杂的 `ADMIN_API_KEY`）。
+  系统会继续兼容旧版的 `EMBEDDING_` 前缀变量，但推荐逐步迁移到 `EMBEDDING_NG_` 命名。
 
 | 变量名 | 说明 | 默认值 | 必需 |
 | ------ | ---- | ------ | ---- |
-| `EMBEDDING_API_KEY` | OpenAI 兼容 Embedding API 密钥 | - | ✅ |
-| `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
-| `EMBEDDING_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
-| `EMBEDDING_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
+| `EMBEDDING_NG_API_KEY` | OpenAI 兼容 Embedding API 密钥 | - | ✅ |
+| `EMBEDDING_NG_BASE_URL` | Embedding API Base URL | - | ❌ |
+| `EMBEDDING_NG_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
 | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3398` | ❌ |
 | `TOOLS_DB_PATH` | 自定义 SQLite 数据库文件路径 | `<project>/tools_vector.db` | ❌ |
