@@ -136,7 +136,6 @@ npm install
 | `ALLOWED_ORIGINS` | 允许的 CORS 来源列表（逗号分隔） | `http://localhost:3000` | ❌ |
 | `ADMIN_RATE_LIMIT_WINDOW_MS` | 管理 API 限流窗口（毫秒） | `60000` | ❌ |
 | `ADMIN_RATE_LIMIT_MAX` | 每个客户端在窗口内允许的请求数 | `120` | ❌ |
-| `LOG_LEVEL` | 日志级别（`trace` 至 `fatal`） | `info` | ❌ |
 | `VECTORIZE_CONCURRENCY` | 工具向量化并发工作数 | `4` | ❌ |
 
 ### 4. 启动服务
@@ -150,36 +149,6 @@ npm start
 - 从数据库加载 12 个预配置的 MCP 服务器
 - 在 `http://localhost:3000/mcp` 启动本地 MCP 服务器
 - 在 `http://localhost:3000/api/...` 提供需要 `ADMIN_API_KEY` 的安全 RESTful API
-
-## 测试
-
-使用 Node.js 自带的测试运行器执行单元与集成测试：
-
-```bash
-LOG_LEVEL=error npm test
-```
-
-> ℹ️ 集成测试会启动真实的 MCP 服务实例；当运行环境缺少 `better-sqlite3` 的原生绑定（例如未编译的 Linux 镜像）时，该用例会自动跳过。
-
-## 可观测性
-
-- **结构化日志**：所有日志均以带上下文的 JSON 输出，可通过 `LOG_LEVEL`（`trace`、`debug`、`info`、`warn`、`error`、`fatal`）调整详细程度。
-- **请求日志中间件**：记录每个 HTTP 请求的 Method、URL、状态码和耗时。
-- **Prometheus 指标**：访问 `GET /metrics` 可获取 `http_request_duration_seconds` 直方图，用于监控请求延迟。
-
-## 容器化部署
-
-可以通过 Docker 快速启动：
-
-```bash
-# 构建镜像
-docker build -t dextmcp .
-
-# 使用 docker-compose 运行（SQLite 数据持久化在 ./data）
-docker compose up -d
-```
-
-`docker-compose.yml` 会将服务映射到本地 `3000` 端口，并把 SQLite 数据库存储在 `./data/tools_vector.db`，同时支持通过环境变量完成安全配置。
 
 ## MCP 服务器管理 API
 
@@ -243,14 +212,6 @@ curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
 curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
-
-#### 手动触发工具同步
-```bash
-curl -X POST http://localhost:3000/api/sync \
-  -H "x-api-key: $ADMIN_API_KEY"
-```
-
-当远程 MCP 服务器新增、修改或下线工具时，可以调用该接口重新抓取并向量化最新的工具列表，无需重启本地服务。
 
 ### 安全加固
 

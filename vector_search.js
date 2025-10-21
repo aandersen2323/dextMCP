@@ -25,6 +25,26 @@ async function runWithConcurrency(items, limit, handler) {
 
 const vectorLogger = createChildLogger({ module: 'vector-search' });
 
+async function runWithConcurrency(items, limit, handler) {
+    const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
+    let index = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length || 0) }, async () => {
+        while (true) {
+            const currentIndex = index;
+            index += 1;
+
+            if (currentIndex >= items.length) {
+                break;
+            }
+
+            await handler(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+}
+
 class VectorSearch {
     constructor() {
         this.db = new VectorDatabase();
@@ -176,7 +196,7 @@ class VectorSearch {
             vectorLogger.info(`🔧 模型: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
             const groupInfo = groupNames && groupNames.length > 0 ? `, 分组过滤: ${groupNames.join(', ')}` : '';
-            vectorLogger.info(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
+            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
 
             let effectiveServerNames = serverNames;
 
@@ -184,7 +204,7 @@ class VectorSearch {
                 const groupServerNames = this.db.getServerNamesForGroups(groupNames);
 
                 if (groupServerNames.length === 0) {
-                    vectorLogger.info('⚠️  指定分组没有匹配的服务器，返回空结果');
+                    console.log('⚠️  指定分组没有匹配的服务器，返回空结果');
                     return [];
                 }
 
@@ -192,7 +212,7 @@ class VectorSearch {
                     effectiveServerNames = effectiveServerNames.filter(name => groupServerNames.includes(name));
 
                     if (effectiveServerNames.length === 0) {
-                        vectorLogger.info('⚠️  分组过滤与服务器过滤没有交集，返回空结果');
+                        console.log('⚠️  分组过滤与服务器过滤没有交集，返回空结果');
                         return [];
                     }
                 } else {
@@ -294,18 +314,18 @@ class VectorSearch {
 
             await runWithConcurrency(toolsToVectorize, concurrencyLimit, async (tool, index) => {
                 try {
-                    vectorLogger.info(`📊 向量化进度: ${index + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
+                    console.log(`📊 向量化进度: ${index + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
 
                     const vector = await vectorizeString(`${tool.toolName} ${tool.description}`.trim());
 
-                    vectorLogger.info(`🔍 检查是否存在相似工具: ${tool.toolName}`);
+                    console.log(`🔍 检查是否存在相似工具: ${tool.toolName}`);
 
                     try {
                         const queryVector = vector;
                         const similarTools = await this.db.searchSimilarVectors(queryVector, 10, 0.7);
 
                         if (similarTools.length > 0) {
-                            vectorLogger.info(`📊 找到 ${similarTools.length} 个候选相似工具`);
+                            console.log(`📊 找到 ${similarTools.length} 个候选相似工具`);
 
                             const toDelete = this.identifySimilarToolsToDelete(
                                 tool.toolName,

@@ -137,7 +137,6 @@ npm install
 | `ALLOWED_ORIGINS` | Comma separated CORS allowlist | `http://localhost:3000` | ❌ |
 | `ADMIN_RATE_LIMIT_WINDOW_MS` | Rate limiting window for admin API (milliseconds) | `60000` | ❌ |
 | `ADMIN_RATE_LIMIT_MAX` | Maximum requests per window per client IP | `120` | ❌ |
-| `LOG_LEVEL` | Structured log level (`trace` → `fatal`) | `info` | ❌ |
 | `VECTORIZE_CONCURRENCY` | Number of parallel workers used when embedding tools | `4` | ❌ |
 
 ### 4. Start Service
@@ -151,36 +150,6 @@ The system will:
 - Load 12 pre-configured MCP servers from the database
 - Start the local MCP server at `http://localhost:3000/mcp`
 - Provide a secured RESTful API at `http://localhost:3000/api/...` (requires `ADMIN_API_KEY`)
-
-## Testing
-
-Run the automated unit and integration checks with the built-in Node.js test runner:
-
-```bash
-LOG_LEVEL=error npm test
-```
-
-> ℹ️ The integration suite starts a real MCP server instance and will be skipped automatically when the `better-sqlite3` native bindings are not available (for example, on platforms where prebuilt binaries are missing).
-
-## Observability
-
-- **Structured logging** – all application logs are emitted as JSON with request context. Adjust verbosity with `LOG_LEVEL` (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
-- **Request logging middleware** – every HTTP call records method, URL, status code, and latency.
-- **Prometheus metrics** – scrape `GET /metrics` to collect `http_request_duration_seconds` histograms segmented by method, route, and status code.
-
-## Containerized Deployment
-
-Build and run the service using Docker:
-
-```bash
-# Build image
-docker build -t dextmcp .
-
-# Start with docker-compose (persists SQLite data in ./data)
-docker compose up -d
-```
-
-The compose file maps the MCP server to `localhost:3000`, writes the SQLite database to `./data/tools_vector.db`, and surfaces the same environment variables described above for secure configuration.
 
 ## MCP Server & Group Management API
 
@@ -267,14 +236,6 @@ curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
 curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
-
-#### Trigger Tool Sync
-```bash
-curl -X POST http://localhost:3000/api/sync \
-  -H "x-api-key: $ADMIN_API_KEY"
-```
-
-Use this endpoint whenever remote MCP servers add, update, or remove tools. The call refreshes the vector index without restarting the local service.
 
 ### Group Management
 

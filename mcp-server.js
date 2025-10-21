@@ -14,15 +14,6 @@ import {
     secureSessionId,
     maskError
 } from './security.js';
-import {
-    logger,
-    createChildLogger,
-    createRequestLogger,
-    metricsMiddleware,
-    metricsHandler
-} from './observability.js';
-
-const appLogger = createChildLogger({ module: 'mcp-server' });
 
 // 从数据库读取服务器信息并生成增强描述
 async function getEnhancedServerDescription() {
@@ -242,7 +233,7 @@ server.registerTool(
 
             if (needToGenerateNewSession) {
                 finalSessionId = secureSessionId();
-                appLogger.info(`🆕 生成新的sessionId: ${finalSessionId}`);
+                console.log(`🆕 生成新的sessionId: ${finalSessionId}`);
                 isFirstTimeSession = true;
             }
 
@@ -262,14 +253,12 @@ server.registerTool(
                 const description = descriptions[i];
 
                 // 使用recommendTools方法来获取完整的MCP工具信息
-                const recommendations = await recommender.recommend(description, {
-                    topK,
-                    threshold,
-                    includeDetails: true,
-                    format: 'raw',
-                    serverNames,
-                    groupNames
-                });
+                const recommendations = await vectorSearch.recommendTools(
+                    description,
+                    mcpClient,
+                    modelName,
+                    { topK, threshold, includeDetails: true, serverNames, groupNames }
+                );
 
                 const topResult = recommendations || [];
 
@@ -606,7 +595,7 @@ function formatMcpServerRow(row) {
             groupNames = vectorDatabase.getGroupNamesForServer(row.id);
         }
     } catch (error) {
-        appLogger.error({ err: error }, '获取服务器分组信息失败');
+        console.error('获取服务器分组信息失败:', error.message);
     }
 
     groupNames = Array.from(new Set(groupNames)).sort();
@@ -696,7 +685,7 @@ adminRouter.get('/mcp-servers', async (req, res) => {
             }
         });
     } catch (error) {
-        appLogger.error({ err: error }, '获取MCP服务器列表失败');
+        console.error('获取MCP服务器列表失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -722,7 +711,7 @@ adminRouter.get('/mcp-servers/:id', async (req, res) => {
         const server = formatMcpServerRow(row);
         res.json({ data: server });
     } catch (error) {
-        appLogger.error({ err: error }, '获取MCP服务器失败');
+        console.error('获取MCP服务器失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -805,14 +794,14 @@ adminRouter.post('/mcp-servers', validateCreateMcpServer, async (req, res) => {
         const newRow = getServerRowWithGroups(db, newServerId) || db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(newServerId);
         const server = formatMcpServerRow(newRow);
 
-        appLogger.info(`✅ 创建MCP服务器: ${data.server_name} (ID: ${newServerId})`);
+        console.log(`✅ 创建MCP服务器: ${data.server_name} (ID: ${newServerId})`);
 
         res.status(201).json({
             message: '服务器创建成功',
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '创建MCP服务器失败');
+        console.error('创建MCP服务器失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -988,7 +977,7 @@ adminRouter.patch('/mcp-servers/:id', async (req, res) => {
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新MCP服务器失败');
+        console.error('更新MCP服务器失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1052,7 +1041,7 @@ adminRouter.post('/mcp-servers/:id/groups', async (req, res) => {
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新服务器分组失败');
+        console.error('更新服务器分组失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1125,7 +1114,7 @@ adminRouter.delete('/mcp-servers/:id/groups', async (req, res) => {
             data: server
         });
     } catch (error) {
-        appLogger.error({ err: error }, '移除服务器分组失败');
+        console.error('移除服务器分组失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1164,7 +1153,7 @@ adminRouter.delete('/mcp-servers/:id', async (req, res) => {
             deleted_server_name: existingRow.server_name
         });
     } catch (error) {
-        appLogger.error({ err: error }, '删除MCP服务器失败');
+        console.error('删除MCP服务器失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1186,7 +1175,7 @@ adminRouter.get('/mcp-groups', async (_req, res) => {
 
         res.json({ data: rows.map(formatMcpGroupRow) });
     } catch (error) {
-        appLogger.error({ err: error }, '获取分组列表失败');
+        console.error('获取分组列表失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1215,9 +1204,12 @@ adminRouter.get('/mcp-groups/:id', async (req, res) => {
 
         res.json({ data: formatMcpGroupRow(row) });
     } catch (error) {
-        appLogger.error({ err: error }, '获取分组失败');
+        console.error('获取分组失败:', error);
         res.status(500).json(maskError());
     }
+
+    appLogger.error({ err }, '未处理的服务端错误');
+    res.status(err?.status || 500).json(maskError());
 });
 
 // POST /api/mcp-groups - 创建分组
@@ -1249,14 +1241,14 @@ adminRouter.post('/mcp-groups', async (req, res) => {
             WHERE g.id = ?
         `).get(result.lastInsertRowid);
 
-        appLogger.info(`✅ 创建分组: ${groupName} (ID: ${result.lastInsertRowid})`);
+        console.log(`✅ 创建分组: ${groupName} (ID: ${result.lastInsertRowid})`);
 
         res.status(201).json({
             message: '分组创建成功',
             data: formatMcpGroupRow(row)
         });
     } catch (error) {
-        appLogger.error({ err: error }, '创建分组失败');
+        console.error('创建分组失败:', error);
         if (error.errors) {
             return res.status(400).json({
                 error: '输入验证失败',
@@ -1329,14 +1321,14 @@ adminRouter.patch('/mcp-groups/:id', async (req, res) => {
             WHERE g.id = ?
         `).get(parseInt(id));
 
-        appLogger.info(`✅ 更新分组: ${row.group_name} (ID: ${id})`);
+        console.log(`✅ 更新分组: ${row.group_name} (ID: ${id})`);
 
         res.json({
             message: '分组更新成功',
             data: formatMcpGroupRow(row)
         });
     } catch (error) {
-        appLogger.error({ err: error }, '更新分组失败');
+        console.error('更新分组失败:', error);
         if (error.errors) {
             return res.status(400).json({
                 error: '输入验证失败',
@@ -1365,11 +1357,11 @@ adminRouter.delete('/mcp-groups/:id', async (req, res) => {
 
         db.prepare('DELETE FROM mcp_groups WHERE id = ?').run(parseInt(id));
 
-        appLogger.info(`🗑️  删除分组: ${existing.group_name} (ID: ${id})`);
+        console.log(`🗑️  删除分组: ${existing.group_name} (ID: ${id})`);
 
         res.json({ message: '分组删除成功' });
     } catch (error) {
-        appLogger.error({ err: error }, '删除分组失败');
+        console.error('删除分组失败:', error);
         res.status(500).json(maskError());
     }
 });
@@ -1384,7 +1376,7 @@ app.use((err, _req, res, next) => {
         return next(err);
     }
 
-    appLogger.error({ err }, '未处理的服务端错误');
+    console.error('未处理的服务端错误:', err);
     res.status(err?.status || 500).json(maskError());
 });
 
