@@ -85,7 +85,12 @@ graph TB
 ## Project Structure
 
 ```
-├── index.js                  # Entry point: initialize MCP client, vector tests, start server
+├── index.js                  # Entry point: bootstrap MCP client and server startup sequence
+├── lib/
+│   ├── embedding.js          # Shared embedding helpers for vectorization routines
+│   └── mcpClient.js          # MCP client initialization and environment interpolation utilities
+├── scripts/
+│   └── diagnostics.js        # Optional diagnostics to validate embeddings and vector search
 ├── mcp-server.js             # Local MCP server (Express + MCP SDK) + RESTful API
 ├── vector_search.js          # Tool vectorization and retrieval logic
 ├── database.js               # SQLite + sqlite-vec manager
@@ -262,6 +267,14 @@ curl -X DELETE http://localhost:3000/api/mcp-servers/1/groups \
 curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
+
+#### Trigger Tool Sync
+```bash
+curl -X POST http://localhost:3000/api/sync \
+  -H "x-api-key: $ADMIN_API_KEY"
+```
+
+Use this endpoint whenever remote MCP servers add, update, or remove tools. The call refreshes the vector index without restarting the local service.
 
 ### Group Management
 

@@ -14,14 +14,7 @@ CREATE TABLE IF NOT EXISTS tool_vectors (
 
 -- 创建向量索引表 (sqlite-vec)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_tool_embeddings USING vec0(
-    tool_vector FLOAT[2560]                         -- 向量数据，假设使用2560维度
-);
-
--- 工具元数据映射表
-CREATE TABLE IF NOT EXISTS tool_mapping (
-    rowid INTEGER PRIMARY KEY,                      -- 对应vec_tool_embeddings的rowid
-    tool_id INTEGER NOT NULL,                       -- 对应tool_vectors的id
-    FOREIGN KEY (tool_id) REFERENCES tool_vectors(id) ON DELETE CASCADE
+    tool_vector FLOAT[1024]                         -- 向量数据，默认与EMBEDDING_VECTOR_DIMENSION保持一致
 );
 
 -- MCP服务器配置表
@@ -54,7 +47,6 @@ CREATE TABLE IF NOT EXISTS session_tool_history (
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_md5 ON tool_vectors(tool_md5);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_model ON tool_vectors(model_name);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_name ON tool_vectors(tool_name);
-CREATE INDEX IF NOT EXISTS idx_tool_mapping_tool_id ON tool_mapping(tool_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(server_name);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_type ON mcp_servers(server_type);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);

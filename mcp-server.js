@@ -3,9 +3,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import VectorSearch from './vector_search.js';
 import VectorDatabase from './database.js';
-import { initializeMCPClient, getMCPClient } from './index.js';
+import { initializeMCPClient, getMCPClient } from './lib/mcpClient.js';
+import { getRecommender } from './tool_recommender.js';
 import crypto from 'crypto';
 import {
     buildCorsOptions,
@@ -102,7 +102,7 @@ async function getEnhancedServerDescription() {
 }
 
 // 获取动态服务器名称
-const mcpToolsInfo = global.mcpToolsInfo || { serverName: 'dext', tools: [] };
+const mcpToolsInfo = globalThis.mcpToolsInfo || { serverName: 'dext', tools: [] };
 const dynamicServerName = mcpToolsInfo.serverName || 'dext';
 
 // Create an MCP server with dynamic name
@@ -113,27 +113,34 @@ const server = new McpServer({
 
 appLogger.info(`创建MCP服务器: ${dynamicServerName}`);
 
-const vectorSearch = new VectorSearch();
 const vectorDatabase = new VectorDatabase();
-let vectorSearchInitPromise = null;
 let vectorDatabaseInitPromise = null;
 let mcpClient = null;
 let mcpClientInitPromise = null;
+const toolRecommender = getRecommender();
+let recommenderInitPromise = null;
 
-async function ensureVectorSearchReady() {
-    if (vectorSearchInitPromise) {
-        await vectorSearchInitPromise;
-        return;
+async function ensureToolRecommenderReady() {
+    if (toolRecommender.isReady) {
+        return toolRecommender;
     }
 
-    vectorSearchInitPromise = (async () => {
-        await vectorSearch.initialize();
+    if (recommenderInitPromise) {
+        return recommenderInitPromise;
+    }
+
+    recommenderInitPromise = (async () => {
+        await ensureVectorDatabaseReady();
+        const client = await ensureMCPClientReady();
+        await toolRecommender.initialize(client, { autoIndex: true });
+        appLogger.info('✅ 工具推荐系统已准备就绪');
+        return toolRecommender;
     })();
 
     try {
-        await vectorSearchInitPromise;
+        return await recommenderInitPromise;
     } catch (error) {
-        vectorSearchInitPromise = null;
+        recommenderInitPromise = null;
         throw error;
     }
 }
@@ -210,9 +217,9 @@ server.registerTool(
     },
     async ({ descriptions, sessionId, serverNames, groupNames }) => {
         try {
-            await ensureVectorSearchReady();
             await ensureVectorDatabaseReady();
             const mcpClient = await ensureMCPClientReady();
+            const recommender = await ensureToolRecommenderReady();
 
             // 获取增强的服务器描述
             const enhancedServerDescription = await getEnhancedServerDescription();
@@ -244,7 +251,6 @@ server.registerTool(
             const knownToolMD5s = new Set(sessionHistory.map(item => item.tool_md5));
             appLogger.info(`📋 Session ${finalSessionId} 已检索过的工具数量: ${knownToolMD5s.size}`);
 
-            const modelName = process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715';
             const topK = parseInt(process.env.TOOL_RETRIEVER_TOP_K || '5', 10);
             const threshold = Number(process.env.TOOL_RETRIEVER_THRESHOLD || '0.1');
 
@@ -256,12 +262,14 @@ server.registerTool(
                 const description = descriptions[i];
 
                 // 使用recommendTools方法来获取完整的MCP工具信息
-                const recommendations = await vectorSearch.recommendTools(
-                    description,
-                    mcpClient,
-                    modelName,
-                    { topK, threshold, includeDetails: true, serverNames, groupNames }
-                );
+                const recommendations = await recommender.recommend(description, {
+                    topK,
+                    threshold,
+                    includeDetails: true,
+                    format: 'raw',
+                    serverNames,
+                    groupNames
+                });
 
                 const topResult = recommendations || [];
 
@@ -477,6 +485,28 @@ app.get('/health', cors(corsOptions), (_req, res) => {
 app.get('/metrics', metricsHandler);
 
 // MCP Servers CRUD API
+
+adminRouter.post('/sync', async (_req, res) => {
+    try {
+        await ensureVectorDatabaseReady();
+        const client = await ensureMCPClientReady();
+
+        if (!client) {
+            return res.status(503).json({ error: 'MCP客户端未就绪，无法执行同步' });
+        }
+
+        const recommender = await ensureToolRecommenderReady();
+        const results = await recommender.reindex();
+
+        res.json({
+            message: '工具索引同步完成',
+            indexed: Array.isArray(results) ? results.length : 0
+        });
+    } catch (error) {
+        appLogger.error({ err: error }, '触发工具索引同步失败');
+        res.status(500).json(maskError());
+    }
+});
 
 // Input validation schemas
 const createMcpServerSchema = z.object({

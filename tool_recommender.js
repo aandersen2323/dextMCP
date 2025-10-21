@@ -63,17 +63,19 @@ class ToolRecommender {
                 topK = 3,           // 返回前K个结果
                 threshold = 0.1,    // 相似度阈值
                 includeDetails = false,  // 是否包含详细信息
-                format = 'simple'   // 返回格式: simple, detailed, raw
+                format = 'simple',   // 返回格式: simple, detailed, raw
+                serverNames = undefined,
+                groupNames = undefined
             } = options;
 
             console.log(`🔍 推荐工具: "${query}"`);
-            
+
             // 获取推荐结果
             const recommendations = await this.vectorSearch.recommendTools(
-                query, 
-                this.mcpClient, 
+                query,
+                this.mcpClient,
                 this.modelName,
-                { topK, threshold, includeDetails: true }
+                { topK, threshold, includeDetails: true, serverNames, groupNames }
             );
 
             // 根据格式要求返回结果

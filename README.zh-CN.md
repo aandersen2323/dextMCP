@@ -84,7 +84,12 @@ graph TB
 ## 项目结构
 
 ```
-├── index.js                  # 入口：初始化 MCP 客户端、向量测试、启动服务端
+├── index.js                  # 入口：负责引导 MCP 客户端并启动服务
+├── lib/
+│   ├── embedding.js          # 向量化相关的通用工具函数
+│   └── mcpClient.js          # MCP 客户端初始化与环境变量占位符解析
+├── scripts/
+│   └── diagnostics.js        # 可选的诊断脚本，用于验证向量化与搜索流程
 ├── mcp-server.js             # 本地 MCP 服务端 (Express + MCP SDK) + RESTful API
 ├── vector_search.js          # 工具向量化与检索逻辑
 ├── database.js               # SQLite + sqlite-vec 管理器
@@ -238,6 +243,14 @@ curl -X PATCH http://localhost:3000/api/mcp-servers/1 \
 curl -X DELETE http://localhost:3000/api/mcp-servers/1 \
   -H "x-api-key: $ADMIN_API_KEY"
 ```
+
+#### 手动触发工具同步
+```bash
+curl -X POST http://localhost:3000/api/sync \
+  -H "x-api-key: $ADMIN_API_KEY"
+```
+
+当远程 MCP 服务器新增、修改或下线工具时，可以调用该接口重新抓取并向量化最新的工具列表，无需重启本地服务。
 
 ### 安全加固
 

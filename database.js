@@ -150,18 +150,14 @@ class VectorDatabase {
                 dbLogger.info(`✅ 保存工具元数据: ${toolName} (ID: ${toolId})`);
             }
 
-            // 将向量插入到vec_tool_embeddings表中
+            // 将向量存储到vec_tool_embeddings表中，使用工具ID作为rowid
             const vectorFloat32 = new Float32Array(vector);
-            const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(tool_vector) VALUES (?)');
-            const vecResult = vecInsertStmt.run(vectorFloat32);
+            const deleteExistingVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
+            deleteExistingVecStmt.run(toolId);
+            const vecInsertStmt = this.db.prepare('INSERT INTO vec_tool_embeddings(rowid, tool_vector) VALUES (?, ?)');
+            vecInsertStmt.run(toolId, vectorFloat32);
 
-            const vecRowId = vecResult.lastInsertRowid;
-
-            // 在映射表中建立关联
-            const mappingStmt = this.db.prepare('INSERT OR REPLACE INTO tool_mapping (rowid, tool_id) VALUES (?, ?)');
-            mappingStmt.run(vecRowId, toolId);
-
-            dbLogger.info(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${vecRowId}, 维度: ${vector.length})`);
+            dbLogger.info(`✅ 保存工具向量: ${toolName} (MD5: ${toolMD5}, 向量ID: ${toolId}, 维度: ${vector.length})`);
 
             return toolId;
         } catch (error) {
@@ -231,8 +227,7 @@ class VectorDatabase {
                         (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
                         tv.created_at
                     FROM vec_tool_embeddings vte
-                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
-                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    JOIN tool_vectors tv ON tv.id = vte.rowid
                     WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
                     AND (${serverConditions})
                     ORDER BY distance ASC
@@ -254,8 +249,7 @@ class VectorDatabase {
                         (1.0 - vec_distance_cosine(vte.tool_vector, ?)) as similarity,
                         tv.created_at
                     FROM vec_tool_embeddings vte
-                    JOIN tool_mapping tm ON vte.rowid = tm.rowid
-                    JOIN tool_vectors tv ON tm.tool_id = tv.id
+                    JOIN tool_vectors tv ON tv.id = vte.rowid
                     WHERE (1.0 - vec_distance_cosine(vte.tool_vector, ?)) >= ?
                     ORDER BY distance ASC
                     LIMIT ?
@@ -325,19 +319,8 @@ class VectorDatabase {
 
                 // 2. 删除映射关系和向量数据
                 for (const toolId of toolIds) {
-                    // 查找映射的向量行
-                    const mappingStmt = this.db.prepare('SELECT rowid FROM tool_mapping WHERE tool_id = ?');
-                    const mappings = mappingStmt.all(toolId);
-                    
-                    // 删除向量数据
-                    for (const mapping of mappings) {
-                        const deleteVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
-                        deleteVecStmt.run(mapping.rowid);
-                    }
-                    
-                    // 删除映射关系
-                    const deleteMappingStmt = this.db.prepare('DELETE FROM tool_mapping WHERE tool_id = ?');
-                    deleteMappingStmt.run(toolId);
+                    const deleteVecStmt = this.db.prepare('DELETE FROM vec_tool_embeddings WHERE rowid = ?');
+                    deleteVecStmt.run(toolId);
                 }
 
                 // 3. 删除工具元数据

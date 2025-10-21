@@ -1,6 +1,6 @@
 // 向量搜索和工具推荐模块 (使用sqlite-vec)
 import VectorDatabase from './database.js';
-import { vectorizeString } from './index.js';
+import { vectorizeString } from './lib/embedding.js';
 import { createChildLogger } from './observability.js';
 
 async function runWithConcurrency(items, limit, handler) {
@@ -498,7 +498,6 @@ class VectorSearch {
             // 这里需要清理向量表中的数据
             // 由于sqlite-vec的限制，我们需要重新创建表
             await this.db.run('DELETE FROM vec_tool_embeddings');
-            await this.db.run('DELETE FROM tool_mapping');
             await this.db.run('DELETE FROM tool_vectors WHERE model_name = ?', [defaultModelName]);
             
             vectorLogger.info('✅ 向量索引清理完成');
