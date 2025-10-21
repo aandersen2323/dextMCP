@@ -365,7 +365,7 @@ class VectorDatabase {
         try {
             const totalCountStmt = this.db.prepare('SELECT COUNT(*) as count FROM tool_vectors');
             const totalCount = totalCountStmt.get();
-            
+
             const vectorCountStmt = this.db.prepare('SELECT COUNT(*) as count FROM vec_tool_embeddings');
             const vectorCount = vectorCountStmt.get();
             
@@ -387,6 +387,68 @@ class VectorDatabase {
             return stats;
         } catch (error) {
             console.error('❌ 获取统计信息失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取服务器所属的分组名称列表
+     * @param {number} serverId - MCP服务器ID
+     * @returns {Array<string>} 分组名称列表
+     */
+    getGroupNamesForServer(serverId) {
+        try {
+            const stmt = this.db.prepare(`
+                SELECT g.group_name
+                FROM mcp_server_groups msg
+                JOIN mcp_groups g ON g.id = msg.group_id
+                WHERE msg.server_id = ?
+                ORDER BY g.group_name
+            `);
+
+            const rows = stmt.all(serverId);
+            return rows.map(row => row.group_name);
+        } catch (error) {
+            console.error('❌ 获取服务器分组失败:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * 根据分组名称获取服务器名称列表
+     * @param {Array<string>} groupNames - 分组名称列表
+     * @param {Object} options - 选项
+     * @param {boolean} options.enabledOnly - 是否仅返回启用的服务器
+     * @returns {Array<string>} 服务器名称列表
+     */
+    getServerNamesForGroups(groupNames, { enabledOnly = true } = {}) {
+        try {
+            if (!Array.isArray(groupNames) || groupNames.length === 0) {
+                return [];
+            }
+
+            const placeholders = groupNames.map(() => '?').join(', ');
+            let sql = `
+                SELECT DISTINCT ms.server_name
+                FROM mcp_groups g
+                JOIN mcp_server_groups msg ON g.id = msg.group_id
+                JOIN mcp_servers ms ON ms.id = msg.server_id
+                WHERE g.group_name IN (${placeholders})
+            `;
+
+            if (enabledOnly) {
+                sql += ' AND ms.enabled = 1';
+            }
+
+            sql += ' ORDER BY ms.server_name';
+
+            const stmt = this.db.prepare(sql);
+            const rows = stmt.all(...groupNames);
+
+            const serverNames = rows.map(row => row.server_name);
+            return Array.from(new Set(serverNames));
+        } catch (error) {
+            console.error('❌ 根据分组获取服务器失败:', error.message);
             throw error;
         }
     }

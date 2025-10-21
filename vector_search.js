@@ -2,6 +2,26 @@
 import VectorDatabase from './database.js';
 import { vectorizeString } from './index.js';
 
+async function runWithConcurrency(items, limit, handler) {
+    const concurrency = Math.max(1, Number.isFinite(limit) ? limit : 1);
+    let index = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length || 0) }, async () => {
+        while (true) {
+            const currentIndex = index;
+            index += 1;
+
+            if (currentIndex >= items.length) {
+                break;
+            }
+
+            await handler(items[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.all(workers);
+}
+
 class VectorSearch {
     constructor() {
         this.db = new VectorDatabase();
@@ -144,17 +164,41 @@ class VectorSearch {
                 topK = 5,
                 threshold = 0.1,
                 includeDetails = true,
-                serverNames = null
+                serverNames = null,
+                groupNames = null
             } = options;
 
             console.log(`🤖 开始工具推荐流程 (使用sqlite-vec)...`);
             console.log(`📝 查询: "${query}"`);
             console.log(`🔧 模型: ${defaultModelName}`);
             const serverInfo = serverNames && serverNames.length > 0 ? `, 服务器过滤: ${serverNames.join(', ')}` : '';
-            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}`);
+            const groupInfo = groupNames && groupNames.length > 0 ? `, 分组过滤: ${groupNames.join(', ')}` : '';
+            console.log(`⚙️  参数: topK=${topK}, threshold=${threshold}${serverInfo}${groupInfo}`);
+
+            let effectiveServerNames = serverNames;
+
+            if (groupNames && groupNames.length > 0) {
+                const groupServerNames = this.db.getServerNamesForGroups(groupNames);
+
+                if (groupServerNames.length === 0) {
+                    console.log('⚠️  指定分组没有匹配的服务器，返回空结果');
+                    return [];
+                }
+
+                if (effectiveServerNames && effectiveServerNames.length > 0) {
+                    effectiveServerNames = effectiveServerNames.filter(name => groupServerNames.includes(name));
+
+                    if (effectiveServerNames.length === 0) {
+                        console.log('⚠️  分组过滤与服务器过滤没有交集，返回空结果');
+                        return [];
+                    }
+                } else {
+                    effectiveServerNames = groupServerNames;
+                }
+            }
 
             // 1. 搜索相似工具
-            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, serverNames);
+            const similarTools = await this.searchSimilarTools(query, defaultModelName, topK, threshold, effectiveServerNames);
 
             if (similarTools.length === 0) {
                 console.log('⚠️  未找到相似的工具');
@@ -242,35 +286,31 @@ class VectorSearch {
             // 向量化并检查相似工具
             const vectorizedTools = [];
             const deletedToolsCount = { total: 0 };
-            
-            for (let i = 0; i < toolsToVectorize.length; i++) {
-                const tool = toolsToVectorize[i];
+            const concurrencyFromEnv = parseInt(process.env.VECTORIZE_CONCURRENCY || '4', 10);
+            const concurrencyLimit = Number.isFinite(concurrencyFromEnv) && concurrencyFromEnv > 0 ? concurrencyFromEnv : 4;
+
+            await runWithConcurrency(toolsToVectorize, concurrencyLimit, async (tool, index) => {
                 try {
-                    console.log(`📊 向量化进度: ${i + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
-                    
-                    // 1. 先向量化工具
+                    console.log(`📊 向量化进度: ${index + 1}/${toolsToVectorize.length} - ${tool.toolName}`);
+
                     const vector = await vectorizeString(`${tool.toolName} ${tool.description}`.trim());
-                    
-                    // 2. 在保存前检查是否有相似工具需要删除
+
                     console.log(`🔍 检查是否存在相似工具: ${tool.toolName}`);
-                    
+
                     try {
-                        // 使用新工具的向量搜索相似工具
                         const queryVector = vector;
                         const similarTools = await this.db.searchSimilarVectors(queryVector, 10, 0.7);
-                        
+
                         if (similarTools.length > 0) {
                             console.log(`📊 找到 ${similarTools.length} 个候选相似工具`);
-                            
-                            // 判断是否需要删除相似工具（使用0.96的严格阈值）
+
                             const toDelete = this.identifySimilarToolsToDelete(
                                 tool.toolName,
                                 tool.description,
                                 similarTools,
                                 0.96
                             );
-                            
-                            // 删除被判定为过时的相似工具
+
                             for (const oldTool of toDelete) {
                                 try {
                                     const deletedCount = await this.db.deleteToolVector(
@@ -285,17 +325,16 @@ class VectorSearch {
                                     console.warn(`⚠️  删除工具失败 "${oldTool.tool_name}": ${deleteError.message}`);
                                 }
                             }
-                            
+
                             if (toDelete.length > 0) {
                                 console.log(`✅ 为新工具 "${tool.toolName}" 清理了 ${toDelete.length} 个相似的旧工具`);
                             }
                         }
-                        
+
                     } catch (searchError) {
                         console.warn(`⚠️  搜索相似工具失败 "${tool.toolName}": ${searchError.message}`);
                     }
-                    
-                    // 3. 添加到待保存列表
+
                     vectorizedTools.push({
                         toolName: tool.toolName,
                         description: tool.description,
@@ -305,7 +344,7 @@ class VectorSearch {
                 } catch (error) {
                     console.warn(`⚠️  跳过工具 "${tool.toolName}": ${error.message}`);
                 }
-            }
+            });
 
             // 批量保存到数据库
             const saveResults = await this.db.saveToolVectorsBatch(vectorizedTools, defaultModelName);
