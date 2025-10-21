@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  dextmcp:
+    build: .
+    container_name: dextmcp
+    ports:
+      - "3398:3398"
+    volumes:
+      - ./data:/usr/src/app/data
+    restart: unless-stopped

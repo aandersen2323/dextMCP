@@ -14,14 +14,7 @@ CREATE TABLE IF NOT EXISTS tool_vectors (
 
 -- 创建向量索引表 (sqlite-vec)
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_tool_embeddings USING vec0(
-    tool_vector FLOAT[2560]                         -- 向量数据，假设使用2560维度
-);
-
--- 工具元数据映射表
-CREATE TABLE IF NOT EXISTS tool_mapping (
-    rowid INTEGER PRIMARY KEY,                      -- 对应vec_tool_embeddings的rowid
-    tool_id INTEGER NOT NULL,                       -- 对应tool_vectors的id
-    FOREIGN KEY (tool_id) REFERENCES tool_vectors(id) ON DELETE CASCADE
+    tool_vector FLOAT[1024]                         -- 向量数据，默认与EMBEDDING_VECTOR_DIMENSION保持一致
 );
 
 -- MCP服务器配置表
@@ -54,7 +47,6 @@ CREATE TABLE IF NOT EXISTS session_tool_history (
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_md5 ON tool_vectors(tool_md5);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_model ON tool_vectors(model_name);
 CREATE INDEX IF NOT EXISTS idx_tool_vectors_name ON tool_vectors(tool_name);
-CREATE INDEX IF NOT EXISTS idx_tool_mapping_tool_id ON tool_mapping(tool_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(server_name);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_type ON mcp_servers(server_type);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
@@ -89,3 +81,26 @@ SELECT
     ms.created_at,
     ms.updated_at
 FROM mcp_servers ms;
+
+-- MCP服务器分组表
+CREATE TABLE IF NOT EXISTS mcp_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name TEXT NOT NULL UNIQUE,             -- 分组名称（唯一）
+    description TEXT,                            -- 分组描述
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- MCP服务器与分组关联表（支持一台服务器属于多个分组）
+CREATE TABLE IF NOT EXISTS mcp_server_groups (
+    server_id INTEGER NOT NULL,                  -- MCP服务器ID
+    group_id INTEGER NOT NULL,                   -- 分组ID
+    PRIMARY KEY (server_id, group_id),
+    FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES mcp_groups(id) ON DELETE CASCADE
+);
+
+-- 分组索引
+CREATE INDEX IF NOT EXISTS idx_mcp_groups_name ON mcp_groups(group_name);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_group ON mcp_server_groups(group_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_server_groups_server ON mcp_server_groups(server_id);

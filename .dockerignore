@@ -1,0 +1,8 @@
+.git
+.gitignore
+.idea
+.vscode
+node_modules
+.env
+*.log
+tools_vector.db

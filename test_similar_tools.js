@@ -1,6 +1,6 @@
 // 测试相似工具检测和删除功能
 import VectorSearch from './vector_search.js';
-import { vectorizeString } from './index.js';
+import { vectorizeString } from './lib/embedding.js';
 
 async function testSimilarToolDetection() {
     try {
