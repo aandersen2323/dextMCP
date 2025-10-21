@@ -18,7 +18,7 @@ Dext operates as an intelligent middleware layer:
 
 ```mermaid
 graph TB
-    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:3000/mcp]
+    User[User/Application] -->|Natural Language Query| LocalMCP[Local MCP Server<br/>localhost:3398/mcp]
     User -->|API Management| API[RESTful API<br/>/api/mcp-servers]
 
     LocalMCP -->|Semantic Tool Search| VS[Vector Search Engine]
@@ -123,10 +123,10 @@ npm install
 
 | Variable | Description | Default | Required |
 | -------- | ----------- | ------- | -------- |
-| `EMBEDDING_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
-| `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
-| `EMBEDDING_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
-| `EMBEDDING_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
+| `EMBEDDING_NG_API_KEY` | OpenAI compatible Embedding API key | - | ✅ |
+| `EMBEDDING_NG_BASE_URL` | Embedding API Base URL | - | ❌ |
+| `EMBEDDING_NG_MODEL_NAME` | Embedding model name | `doubao-embedding-text-240715` | ❌ |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | Vector dimension | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth callback listening port | `12334` | ❌ |
 | `MCP_SERVER_PORT` | Local MCP HTTP service listening port | `3000` | ❌ |
 | `TOOLS_DB_PATH` | Custom path for the SQLite database file | `<project>/tools_vector.db` | ❌ |
@@ -171,7 +171,7 @@ curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 #### Create New Server
 ```bash
 # STDIO Server
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -184,7 +184,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
   }'
 
 # HTTP Server
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -316,7 +316,7 @@ CREATE TABLE mcp_server_groups (
 
 ## MCP Tools API
 
-After startup, the local MCP server provides the following tools at `http://localhost:3000/mcp`:
+After startup, the local MCP server provides the following tools at `http://localhost:3398/mcp`:
 
 ### 1. `retriever` - Semantic Tool Search
 Retrieve the most relevant tools based on natural language descriptions.
@@ -432,7 +432,7 @@ db.close();
 
 3. **API Not Accessible**
    - Ensure MCP server is running
-   - Check port configuration (default: 3000)
+   - Check port configuration (default: 3398)
    - Test health endpoint: `GET /health`
 
 ### Debug Commands
@@ -442,10 +442,10 @@ db.close();
 sqlite3 tools_vector.db "SELECT server_name, server_type FROM mcp_servers WHERE enabled = 1;"
 
 # Test API health
-curl http://localhost:3000/health
+curl http://localhost:3398/health
 
 # View enabled servers
-curl "http://localhost:3000/api/mcp-servers?enabled=true"
+curl "http://localhost:3398/api/mcp-servers?enabled=true"
 ```
 
 ### Migration from Legacy Config

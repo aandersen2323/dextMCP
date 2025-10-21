@@ -18,7 +18,7 @@ Dext 作为一个智能中间层运行：
 
 ```mermaid
 graph TB
-    User[用户/应用程序] -->|自然语言查询| LocalMCP[本地 MCP 服务器<br/>localhost:3000/mcp]
+    User[用户/应用程序] -->|自然语言查询| LocalMCP[本地 MCP 服务器<br/>localhost:3398/mcp]
     User -->|API 管理| API[RESTful API<br/>/api/mcp-servers]
 
     LocalMCP -->|语义工具搜索| VS[向量搜索引擎]
@@ -122,10 +122,10 @@ npm install
 
 | 变量名 | 说明 | 默认值 | 必需 |
 | ------ | ---- | ------ | ---- |
-| `EMBEDDING_API_KEY` | OpenAI 兼容 Embedding API 密钥 | - | ✅ |
-| `EMBEDDING_BASE_URL` | Embedding API Base URL | - | ❌ |
-| `EMBEDDING_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
-| `EMBEDDING_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
+| `EMBEDDING_NG_API_KEY` | OpenAI 兼容 Embedding API 密钥 | - | ✅ |
+| `EMBEDDING_NG_BASE_URL` | Embedding API Base URL | - | ❌ |
+| `EMBEDDING_NG_MODEL_NAME` | Embedding 模型名称 | `doubao-embedding-text-240715` | ❌ |
+| `EMBEDDING_NG_VECTOR_DIMENSION` | 向量维度 | `1024` | ❌ |
 | `MCP_CALLBACK_PORT` | OAuth 回调监听端口 | `12334` | ❌ |
 | `MCP_SERVER_PORT` | 本地 MCP HTTP 服务监听端口 | `3000` | ❌ |
 | `TOOLS_DB_PATH` | 自定义 SQLite 数据库文件路径 | `<project>/tools_vector.db` | ❌ |
@@ -170,7 +170,7 @@ curl -H "x-api-key: $ADMIN_API_KEY" http://localhost:3000/api/mcp-servers/1
 #### 创建新服务器
 ```bash
 # STDIO 服务器
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -182,7 +182,7 @@ curl -X POST http://localhost:3000/api/mcp-servers \
   }'
 
 # HTTP 服务器
-curl -X POST http://localhost:3000/api/mcp-servers \
+curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
   -H "x-api-key: $ADMIN_API_KEY" \
   -d '{
@@ -242,7 +242,7 @@ CREATE TABLE mcp_servers (
 
 ## MCP 工具 API
 
-启动后，本地 MCP 服务器将在 `http://localhost:3000/mcp` 提供以下工具：
+启动后，本地 MCP 服务器将在 `http://localhost:3398/mcp` 提供以下工具：
 
 ### 1. `retriever` - 语义工具搜索
 根据自然语言描述检索最相关的工具。
@@ -357,7 +357,7 @@ db.close();
 
 3. **API 无法访问**
    - 确保 MCP 服务器正在运行
-   - 检查端口配置（默认：3000）
+   - 检查端口配置（默认：3398）
    - 测试健康检查端点：`GET /health`
 
 ### 调试命令
@@ -367,10 +367,10 @@ db.close();
 sqlite3 tools_vector.db "SELECT server_name, server_type FROM mcp_servers WHERE enabled = 1;"
 
 # 测试 API 健康状态
-curl http://localhost:3000/health
+curl http://localhost:3398/health
 
 # 查看启用的服务器
-curl "http://localhost:3000/api/mcp-servers?enabled=true"
+curl "http://localhost:3398/api/mcp-servers?enabled=true"
 ```
 
 ### 从遗留配置迁移
