@@ -269,7 +269,7 @@ class VectorDatabase {
 
             return results;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ Vector similarity search失败');
+            dbLogger.error({ err: error }, '❌ Vector similarity search failed');
             throw error;
         }
     }
@@ -341,7 +341,7 @@ class VectorDatabase {
             dbLogger.info(`🗑️  Deleted tool vector: ${toolMD5} (deleted count: ${deletedCount})`);
             return deletedCount;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ Deleted tool vector失败');
+            dbLogger.error({ err: error }, '❌ Failed to delete tool vector');
             throw error;
         }
     }
@@ -382,10 +382,10 @@ class VectorDatabase {
                 modelStats: modelStats
             };
             
-            dbLogger.info('📊 数据库Statistics:', stats);
+            dbLogger.info('📊 Database statistics:', stats);
             return stats;
         } catch (error) {
-            dbLogger.error({ err: error }, '❌ 获取Statistics失败');
+            dbLogger.error({ err: error }, '❌ Failed to retrieve database statistics');
             throw error;
         }
     }
@@ -539,7 +539,7 @@ class VectorDatabase {
     /**
      * Check if tool was retrieved by session
      * @param {string} sessionId - Session ID
-     * @param {string} toolMD5 - 工具MD5
+     * @param {string} toolMD5 - Tool MD5 hash
      * @returns {boolean} Whether retrieved
      */
     isToolRetrievedBySession(sessionId, toolMD5) {
@@ -560,9 +560,9 @@ class VectorDatabase {
     /**
      * Record session tool retrieval
      * @param {string} sessionId - Session ID
-     * @param {string} toolMD5 - 工具MD5
+     * @param {string} toolMD5 - Tool MD5 hash
      * @param {string} toolName - Tool name
-     * @returns {number} 插入的记录ID
+     * @returns {number} Inserted record ID
      */
     recordSessionToolRetrieval(sessionId, toolMD5, toolName) {
         try {
@@ -579,15 +579,15 @@ class VectorDatabase {
                 return null;
             }
         } catch (error) {
-            dbLogger.error({ err: error, sessionId, toolMD5, toolName }, '❌ Recorded session tool retrieval失败');
+            dbLogger.error({ err: error, sessionId, toolMD5, toolName }, '❌ Failed to record session tool retrieval');
             throw error;
         }
     }
 
     /**
-     * 批量Record session tool retrieval
+     * Record session tool retrieval in batch
      * @param {string} sessionId - Session ID
-     * @param {Array} tools - 工具列表，格式: [{toolMD5, toolName}, ...]
+     * @param {Array} tools - Tool list in the format: [{toolMD5, toolName}, ...]
      * @returns {Array<number>} Inserted record ID array
      */
     recordSessionToolRetrievalBatch(sessionId, tools) {
@@ -608,10 +608,10 @@ class VectorDatabase {
             // Execute transaction
             transaction(sessionId, tools);
 
-            dbLogger.info(`✅ 批量Recorded session tool retrieval完成: ${sessionId} -> ${results.length} new tools`);
+            dbLogger.info(`✅ Batch session tool retrieval recording completed: ${sessionId} -> ${results.length} new tools`);
             return results;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId, toolsCount: tools?.length }, '❌ 批量Recorded session tool retrieval失败');
+            dbLogger.error({ err: error, sessionId, toolsCount: tools?.length }, '❌ Failed to record session tool retrieval batch');
             throw error;
         }
     }
@@ -628,13 +628,13 @@ class VectorDatabase {
             dbLogger.info(`🗑️ Cleared session history: ${sessionId} (deleted count: ${result.changes})`);
             return result.changes;
         } catch (error) {
-            dbLogger.error({ err: error, sessionId }, '❌ Cleared session history失败');
+            dbLogger.error({ err: error, sessionId }, '❌ Failed to clear session history');
             throw error;
         }
     }
 
     /**
-     * 获取session的Statistics
+     * Retrieve statistics for a session
      * @param {string} sessionId - Session ID
      * @returns {Object} Statistics
      */
@@ -660,7 +660,7 @@ class VectorDatabase {
                 latest_retrieval: latestResult.latest_retrieval
             };
         } catch (error) {
-            dbLogger.error({ err: error, sessionId }, '❌ 获取sessionStatistics失败');
+            dbLogger.error({ err: error, sessionId }, '❌ Failed to retrieve session statistics');
             throw error;
         }
     }

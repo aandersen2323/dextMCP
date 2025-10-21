@@ -21,13 +21,13 @@ class ToolRecommender {
             this.mcpClient = mcpClient;
             this.vectorSearch = new VectorSearch();
             
-            // 初始化向量搜索引擎
+            // Initialize vector search engine
             await this.vectorSearch.initialize();
-            
-            // 选项配置
+
+            // Configure options
             const {
                 autoIndex = true,  // Whether to auto-index
-                modelName = null   // 模型名称
+                modelName = null   // Model name
             } = options;
             
             this.modelName = modelName
@@ -51,29 +51,29 @@ class ToolRecommender {
     }
 
     /**
-     * 推荐工具 - 主要API接口
-     * @param {string} query - 用户查询文本
-     * @param {Object} options - 推荐选项
-     * @returns {Promise<Array>} 推荐工具列表
+     * Recommend tools - main API entry point
+     * @param {string} query - User query text
+     * @param {Object} options - Recommendation options
+     * @returns {Promise<Array>} List of recommended tools
      */
     async recommend(query, options = {}) {
         try {
             if (!this.isReady) {
-                throw new Error('工具推荐系统未初始化');
+                throw new Error('Tool recommendation system is not initialized');
             }
 
             const {
-                topK = 3,           // 返回前K个结果
-                threshold = 0.1,    // 相似度阈值
-                includeDetails = false,  // 是否包含详细信息
-                format = 'simple',   // 返回格式: simple, detailed, raw
+                topK = 3,           // Return the first K results
+                threshold = 0.1,    // Similarity threshold
+                includeDetails = false,  // Include detail information
+                format = 'simple',   // Return format: simple, detailed, raw
                 serverNames = undefined,
                 groupNames = undefined
             } = options;
 
-            console.log(`🔍 推荐工具: "${query}"`);
+            console.log(`🔍 Recommend tools: "${query}"`);
 
-            // 获取推荐结果
+            // Retrieve recommendation results
             const recommendations = await this.vectorSearch.recommendTools(
                 query,
                 this.mcpClient,
@@ -81,31 +81,31 @@ class ToolRecommender {
                 { topK, threshold, includeDetails: true, serverNames, groupNames }
             );
 
-            // 根据格式要求返回结果
+            // Return results in requested format
             return this.formatResults(recommendations, format, includeDetails);
 
         } catch (error) {
-            console.error('❌ 工具推荐失败:', error.message);
+            console.error('❌ Tool recommendation failed:', error.message);
             throw error;
         }
     }
 
     /**
-     * 批量推荐工具
-     * @param {Array<string>} queries - 查询文本数组
-     * @param {Object} options - 推荐选项
-     * @returns {Promise<Array>} 批量推荐结果
+     * Recommend tools in batch
+     * @param {Array<string>} queries - Array of query texts
+     * @param {Object} options - Recommendation options
+     * @returns {Promise<Array>} Batch recommendation results
      */
     async batchRecommend(queries, options = {}) {
         try {
-            console.log(`🔍 批量推荐工具: ${queries.length} 个查询`);
-            
+            console.log(`🔍 Batch tool recommendation: ${queries.length} queries`);
+
             const results = [];
-            
+
             for (let i = 0; i < queries.length; i++) {
                 const query = queries[i];
-                console.log(`📋 处理查询 ${i + 1}/${queries.length}: "${query}"`);
-                
+                console.log(`📋 Processing query ${i + 1}/${queries.length}: "${query}"`);
+
                 try {
                     const recommendations = await this.recommend(query, options);
                     results.push({
@@ -114,7 +114,7 @@ class ToolRecommender {
                         success: true
                     });
                 } catch (error) {
-                    console.warn(`⚠️  查询失败 "${query}": ${error.message}`);
+                    console.warn(`⚠️  Query failed "${query}": ${error.message}`);
                     results.push({
                         query,
                         recommendations: [],
@@ -123,21 +123,21 @@ class ToolRecommender {
                     });
                 }
             }
-            
-            console.log(`✅ 批量推荐完成: ${results.length} 个结果`);
+
+            console.log(`✅ Batch recommendation completed: ${results.length} results`);
             return results;
 
         } catch (error) {
-            console.error('❌ 批量工具推荐失败:', error.message);
+            console.error('❌ Batch tool recommendation failed:', error.message);
             throw error;
         }
     }
 
     /**
-     * 获取最佳工具推荐 (返回相似度最高的单个工具)
-     * @param {string} query - 用户查询文本
-     * @param {number} threshold - 最低相似度阈值
-     * @returns {Promise<Object|null>} 最佳推荐工具或null
+     * Get the best tool recommendation (returns the single tool with highest similarity)
+     * @param {string} query - User query text
+     * @param {number} threshold - Minimum similarity threshold
+     * @returns {Promise<Object|null>} The best recommended tool or null
      */
     async getBestTool(query, threshold = 0.3) {
         try {
@@ -150,17 +150,17 @@ class ToolRecommender {
             return recommendations.length > 0 ? recommendations[0] : null;
 
         } catch (error) {
-            console.error('❌ 获取最佳工具失败:', error.message);
+            console.error('❌ Failed to get best tool:', error.message);
             throw error;
         }
     }
 
     /**
-     * 格式化推荐结果
-     * @param {Array} recommendations - 原始推荐结果
-     * @param {string} format - 格式类型
-     * @param {boolean} includeDetails - 是否包含详细信息
-     * @returns {Array} 格式化后的结果
+     * Format recommendation results
+     * @param {Array} recommendations - Raw recommendation results
+     * @param {string} format - Format type
+     * @param {boolean} includeDetails - Whether to include detail information
+     * @returns {Array} Formatted results
      */
     formatResults(recommendations, format, includeDetails) {
         switch (format) {
@@ -190,9 +190,9 @@ class ToolRecommender {
     }
 
     /**
-     * 根据相似度获取置信度等级
-     * @param {number} similarity - 相似度分数
-     * @returns {string} 置信度等级
+     * Derive confidence level from similarity score
+     * @param {number} similarity - Similarity score
+     * @returns {string} Confidence level
      */
     getConfidenceLevel(similarity) {
         if (similarity >= 0.8) return 'very_high';
@@ -203,30 +203,30 @@ class ToolRecommender {
     }
 
     /**
-     * 重新索引MCP工具
-     * @returns {Promise<Array>} 索引结果
+     * Re-index MCP tools
+     * @returns {Promise<Array>} Indexing results
      */
     async reindex() {
         try {
             if (!this.isReady) {
-                throw new Error('工具推荐系统未初始化');
+                throw new Error('Tool recommendation system is not initialized');
             }
 
-            console.log('🔄 重新索引MCP工具...');
+            console.log('🔄 Re-indexing MCP tools...');
             const results = await this.vectorSearch.indexMCPTools(this.mcpClient, this.modelName);
-            console.log('✅ 重新索引完成');
-            
+            console.log('✅ Re-index completed');
+
             return results;
 
         } catch (error) {
-            console.error('❌ 重新索引失败:', error.message);
+            console.error('❌ Re-index failed:', error.message);
             throw error;
         }
     }
 
     /**
-     * 获取系统状态和统计信息
-     * @returns {Promise<Object>} 系统状态
+     * Retrieve system status and statistics
+     * @returns {Promise<Object>} System status
      */
     async getStatus() {
         try {
@@ -247,7 +247,7 @@ class ToolRecommender {
             return status;
 
         } catch (error) {
-            console.error('❌ 获取状态失败:', error.message);
+            console.error('❌ Failed to retrieve status:', error.message);
             return {
                 isReady: false,
                 error: error.message
@@ -256,15 +256,15 @@ class ToolRecommender {
     }
 
     /**
-     * 搜索相似工具 (不依赖MCP客户端)
-     * @param {string} query - 查询文本
-     * @param {Object} options - 搜索选项
-     * @returns {Promise<Array>} 相似工具MD5列表
+     * Search for similar tools (without relying on an MCP client)
+     * @param {string} query - Query text
+     * @param {Object} options - Search options
+     * @returns {Promise<Array>} List of similar tool MD5 hashes
      */
     async searchSimilar(query, options = {}) {
         try {
             if (!this.isReady) {
-                throw new Error('工具推荐系统未初始化');
+                throw new Error('Tool recommendation system is not initialized');
             }
 
             const {
@@ -282,36 +282,36 @@ class ToolRecommender {
             return results;
 
         } catch (error) {
-            console.error('❌ 搜索相似工具失败:', error.message);
+            console.error('❌ Failed to search similar tools:', error.message);
             throw error;
         }
     }
 
     /**
-     * 关闭工具推荐系统
+     * Shut down the tool recommendation system
      */
     async close() {
         try {
             if (this.vectorSearch) {
                 await this.vectorSearch.close();
             }
-            
+
             this.isReady = false;
-            console.log('✅ 工具推荐系统已关闭');
+            console.log('✅ Tool recommendation system closed');
 
         } catch (error) {
-            console.error('❌ 关闭工具推荐系统失败:', error.message);
+            console.error('❌ Failed to close tool recommendation system:', error.message);
             throw error;
         }
     }
 }
 
-// 创建全局实例
+// Create a global instance
 let globalRecommender = null;
 
 /**
- * 获取全局工具推荐实例
- * @returns {ToolRecommender} 工具推荐实例
+ * Retrieve the global tool recommender instance
+ * @returns {ToolRecommender} Tool recommender instance
  */
 export function getRecommender() {
     if (!globalRecommender) {
@@ -321,11 +321,11 @@ export function getRecommender() {
 }
 
 /**
- * 快速推荐工具 - 便捷函数
- * @param {string} query - 查询文本
- * @param {Object} mcpClient - MCP客户端
- * @param {Object} options - 选项
- * @returns {Promise<Array>} 推荐结果
+ * Quickly recommend tools - convenience helper
+ * @param {string} query - Query text
+ * @param {Object} mcpClient - MCP client
+ * @param {Object} options - Options
+ * @returns {Promise<Array>} Recommendation results
  */
 export async function recommendTools(query, mcpClient, options = {}) {
     const recommender = getRecommender();

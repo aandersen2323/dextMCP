@@ -3,53 +3,53 @@ import { vectorizeString, vectorizeMultipleStrings } from '../lib/embedding.js';
 
 async function runVectorizationDiagnostics() {
     try {
-        console.log('\n🚀 开始测试向量化功能...');
-        console.log(`📋 当前配置:`);
-        console.log(`   - 模型: ${process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715'}`);
-        console.log(`   - 端点: ${process.env.EMBEDDING_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'}`);
-        console.log(`   - 预期维度: ${process.env.EMBEDDING_VECTOR_DIMENSION || '1024'}`);
+        console.log('\n🚀 Starting vectorization diagnostics...');
+        console.log(`📋 Current configuration:`);
+        console.log(`   - Model: ${process.env.EMBEDDING_MODEL_NAME || 'doubao-embedding-text-240715'}`);
+        console.log(`   - Endpoint: ${process.env.EMBEDDING_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3'}`);
+        console.log(`   - Expected dimension: ${process.env.EMBEDDING_VECTOR_DIMENSION || '1024'}`);
 
-        const testText = '这是一个测试文本，用于验证doubao embedding模型的功能';
+        const testText = 'This is a test string to verify the doubao embedding model';
         const vector = await vectorizeString(testText);
-        console.log(`✅ 单个字符串向量化成功，向量维度: ${vector.length}`);
+        console.log(`✅ Single-string vectorization succeeded; dimension: ${vector.length}`);
 
         const testTexts = [
-            '人工智能技术正在快速发展',
-            '自然语言处理是AI的重要分支',
-            '向量化是文本处理的关键步骤'
+            'Artificial intelligence is evolving rapidly',
+            'Natural language processing is a key AI discipline',
+            'Vectorization is a critical step in text processing'
         ];
         const vectors = await vectorizeMultipleStrings(testTexts);
-        console.log(`✅ 批量向量化成功，共处理 ${vectors.length} 个文本`);
+        console.log(`✅ Batch vectorization succeeded; processed ${vectors.length} texts`);
 
-        console.log('🎉 向量化功能测试完成！');
+        console.log('🎉 Vectorization diagnostics complete!');
     } catch (error) {
-        console.error('❌ 向量化测试失败:', error.message);
+        console.error('❌ Vectorization diagnostics failed:', error.message);
     }
 }
 
 async function runVectorSearchDiagnostics(mcpClient) {
     try {
-        console.log('\n🔍 开始测试向量搜索功能...');
+        console.log('\n🔍 Starting vector search diagnostics...');
 
         const vectorSearch = new VectorSearch();
         await vectorSearch.initialize();
 
         if (!mcpClient) {
-            console.log('⚠️  MCP客户端未初始化，跳过向量搜索测试');
+            console.log('⚠️  MCP client is not initialized; skipping vector search diagnostics');
             await vectorSearch.close();
             return;
         }
 
-        console.log('\n📊 为MCP工具建立向量索引...');
+        console.log('\n📊 Building vector index for MCP tools...');
         await vectorSearch.indexMCPTools(mcpClient);
 
-        console.log('\n🤖 测试工具推荐功能...');
+        console.log('\n🤖 Testing tool recommendation...');
         const testQueries = [
-            `docx_block_create飞书-云文档-文档-块-创建块并插入到指定的位置\n\n**最适合:** 文本、标题、列表、代码、引用、待办事项、高亮、表格、图片、附件、文件、视频、插件块（文本绘图、名词解释、时间轴、目录导航、信息收集、倒计时）等所有块类型的创建\n\n**不推荐用于:** 在没有使用docx_image_or_video_or_file_create的情况下直接创建图片、附件、文件、视频块\n\n**示例:** 在文档中创建一个文本块，内容为"Hello World"\n\n**返回:** 新创建的块信息，包括块ID和富文本内容`
+            `docx_block_create Feishu Docs block creation request\n\n**Best suited for:** text, headings, lists, code blocks, quotes, tasks, highlights, tables, images, attachments, files, videos, and plugin blocks (diagram, glossary, timeline, outline, intake forms, countdown)\n\n**Not recommended for:** directly creating media blocks without docx_image_or_video_or_file_create\n\n**Example:** Create a text block with the contents "Hello World"\n\n**Return value:** Details about the new block including the block ID and rich-text payload`
         ];
 
         for (const query of testQueries) {
-            console.log(`\n🔍 查询: "${query}"`);
+            console.log(`\n🔍 Query: "${query}"`);
             const recommendations = await vectorSearch.recommendTools(
                 query,
                 mcpClient,
@@ -58,26 +58,26 @@ async function runVectorSearchDiagnostics(mcpClient) {
             );
 
             if (recommendations.length > 0) {
-                console.log(`✅ 找到 ${recommendations.length} 个推荐工具:`);
+                console.log(`✅ Found ${recommendations.length} recommended tools:`);
                 recommendations.forEach((tool, index) => {
-                    console.log(`   ${index + 1}. ${tool.tool_name} (相似度: ${tool.similarity.toFixed(4)})`);
+                    console.log(`   ${index + 1}. ${tool.tool_name} (similarity: ${tool.similarity.toFixed(4)})`);
                     if (tool.description) {
-                        console.log(`      描述: ${tool.description.substring(0, 100)}${tool.description.length > 100 ? '...' : ''}`);
+                        console.log(`      Description: ${tool.description.substring(0, 100)}${tool.description.length > 100 ? '...' : ''}`);
                     }
                 });
             } else {
-                console.log('❌ 未找到相关工具');
+                console.log('❌ No matching tools found');
             }
         }
 
-        console.log('\n📊 获取向量搜索统计信息...');
+        console.log('\n📊 Fetching vector search statistics...');
         const stats = await vectorSearch.getSearchStats();
-        console.log('统计信息:', stats);
+        console.log('Statistics:', stats);
 
         await vectorSearch.close();
-        console.log('🎉 向量搜索功能测试完成！');
+        console.log('🎉 Vector search diagnostics complete!');
     } catch (error) {
-        console.error('❌ 向量搜索测试失败:', error.message);
+        console.error('❌ Vector search diagnostics failed:', error.message);
     }
 }
 
@@ -86,10 +86,10 @@ async function runDatabaseInitializationDiagnostics() {
         const vectorSearch = new VectorSearch();
         await vectorSearch.initialize();
         const stats = await vectorSearch.getSearchStats();
-        console.log('✅ 数据库初始化成功，统计信息:', stats);
+        console.log('✅ Database initialization succeeded; statistics:', stats);
         await vectorSearch.close();
     } catch (error) {
-        console.error('❌ 数据库初始化测试失败:', error.message);
+        console.error('❌ Database initialization diagnostics failed:', error.message);
     }
 }
 

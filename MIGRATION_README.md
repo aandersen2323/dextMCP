@@ -1,12 +1,12 @@
-# MCP服务器配置管理说明
+# MCP Server Configuration Management Guide
 
-## 概述
+## Overview
 
-本项目使用数据库存储MCP服务器配置，提供完整的RESTful API进行配置管理。这提供了动态配置能力、数据持久化和更好的管理体验。
+This project stores MCP server configuration in a database and exposes a full RESTful API for managing it. The approach enables dynamic configuration, data persistence, and an improved operational experience.
 
-## 配置存储
+## Configuration Storage
 
-MCP服务器配置存储在SQLite数据库的 `mcp_servers` 表中：
+MCP server configuration lives in the SQLite `mcp_servers` table:
 
 ```sql
 CREATE TABLE mcp_servers (
@@ -15,9 +15,9 @@ CREATE TABLE mcp_servers (
     server_type TEXT NOT NULL CHECK (server_type IN ('http', 'stdio')),
     url TEXT,
     command TEXT,
-    args TEXT,  -- JSON格式
-    headers TEXT, -- JSON格式
-    env TEXT, -- JSON格式
+    args TEXT,  -- JSON formatted
+    headers TEXT, -- JSON formatted
+    env TEXT, -- JSON formatted
     description TEXT,
     enabled INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -27,37 +27,38 @@ CREATE TABLE mcp_servers (
 
 ## RESTful API
 
-提供完整的MCP服务器管理API：
+The API surface for MCP server management includes:
 
-- `GET /api/mcp-servers` - 获取服务器列表
-- `POST /api/mcp-servers` - 创建新服务器
-- `GET /api/mcp-servers/:id` - 获取特定服务器
-- `PUT /api/mcp-servers/:id` - 更新服务器
-- `DELETE /api/mcp-servers/:id` - 删除服务器
+- `GET /api/mcp-servers` – Retrieve all servers
+- `POST /api/mcp-servers` – Create a new server
+- `GET /api/mcp-servers/:id` – Fetch a specific server
+- `PUT /api/mcp-servers/:id` – Update a server
+- `DELETE /api/mcp-servers/:id` – Delete a server
 
-## 旧配置文件迁移 (已弃用)
+## Legacy Configuration Migration (Deprecated)
 
-如果需要从旧的 `mcp-servers.json` 文件迁移配置：
+To migrate an old `mcp-servers.json` configuration file into the database:
 
 ```bash
-# 注意：此功能仅用于迁移旧配置，新项目请直接使用API
+# Note: Only use this helper when migrating an existing configuration file.
 node migrate-mcp-servers.js
 ```
 
-迁移脚本会：
-1. 读取旧的配置文件（如果存在）
-2. 将配置迁移到数据库
-3. 创建配置文件备份
-4. 跳过已存在的服务器配置
+The migration script:
 
-## API 使用示例
+1. Reads the legacy configuration file (when present)
+2. Imports the configuration into the database
+3. Creates a backup of the original file
+4. Skips servers that already exist in the database
 
-### 获取所有启用的服务器
+## API Usage Examples
+
+### Retrieve all enabled servers
 ```bash
 curl http://localhost:3398/api/mcp-servers?enabled=true
 ```
 
-### 创建新的STDIO服务器
+### Create a new STDIO server
 ```bash
 curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
@@ -66,11 +67,11 @@ curl -X POST http://localhost:3398/api/mcp-servers \
     "server_type": "stdio",
     "command": "npx",
     "args": ["my-package"],
-    "description": "我的MCP服务器"
+    "description": "My MCP server"
   }'
 ```
 
-### 创建新的HTTP服务器
+### Create a new HTTP server
 ```bash
 curl -X POST http://localhost:3398/api/mcp-servers \
   -H "Content-Type: application/json" \
@@ -81,65 +82,65 @@ curl -X POST http://localhost:3398/api/mcp-servers \
     "headers": {
       "Authorization": "Bearer token"
     },
-    "description": "HTTP MCP服务器"
+    "description": "HTTP MCP server"
   }'
 ```
 
-### 更新服务器配置
+### Update a server configuration
 ```bash
 curl -X PUT http://localhost:3398/api/mcp-servers/1 \
   -H "Content-Type: application/json" \
   -d '{
-    "description": "更新后的描述",
+    "description": "Updated description",
     "enabled": false
   }'
 ```
 
-### 删除服务器
+### Delete a server
 ```bash
 curl -X DELETE http://localhost:3398/api/mcp-servers/1
 ```
 
-## 优势
+## Benefits
 
-1. **动态配置**: 可以在运行时通过API修改服务器配置，无需重启应用
-2. **数据持久化**: 使用SQLite数据库，支持更复杂的查询和管理
-3. **RESTful API**: 提供完整的管理接口，便于集成到其他系统
-4. **配置验证**: 支持数据验证和错误处理
-5. **版本控制**: 数据库包含创建和更新时间，便于追踪变更
+1. **Dynamic configuration** – Modify server configuration at runtime via the API without restarts
+2. **Data persistence** – SQLite storage supports richer queries and management workflows
+3. **RESTful API** – Provides a comprehensive management interface for integration with other systems
+4. **Validation** – Includes data validation and error handling
+5. **Version tracking** – Creation and update timestamps make change history easy to audit
 
-## 注意事项
+## Operational Notes
 
-1. **数据库文件**: 配置存储在 `tools_vector.db` 文件中
-2. **权限管理**: 生产环境建议对API接口添加适当的权限控制
-3. **备份**: 建议定期备份数据库文件
-4. **配置文件**: 不再使用 `mcp-servers.json` 文件，所有配置通过数据库管理
+1. **Database file** – Configuration is stored in `tools_vector.db`
+2. **Access control** – Add authentication/authorization before exposing the API in production
+3. **Backups** – Regularly back up the database file
+4. **Configuration files** – `mcp-servers.json` is deprecated; manage configuration exclusively through the database
 
-## 故障排除
+## Troubleshooting
 
-### 问题：MCP客户端初始化失败
-- 检查数据库文件是否存在且有正确权限
-- 确认数据库中有启用的MCP服务器配置
-- 查看应用日志中的错误信息
-- 使用API检查服务器状态：`GET /api/mcp-servers?enabled=true`
+### Issue: MCP client fails to initialize
+- Ensure the database file exists and has appropriate permissions
+- Confirm there are enabled MCP server entries in the database
+- Inspect application logs for detailed error messages
+- Query server status via `GET /api/mcp-servers?enabled=true`
 
-### 问题：服务器无法连接
-- 确认服务器配置正确（URL、命令、参数等）
-- 检查网络连接和防火墙设置
-- 验证服务器类型是否正确（http/stdio）
-- 使用API更新服务器配置：`PUT /api/mcp-servers/:id`
+### Issue: Unable to connect to a server
+- Verify the server configuration (URL, command, arguments, etc.)
+- Check network connectivity and firewall rules
+- Confirm the server type is correct (`http` or `stdio`)
+- Update the configuration with `PUT /api/mcp-servers/:id`
 
-### 问题：API接口无法访问
-- 确认MCP服务器已启动
-- 检查端口配置（默认3398）
-- 验证CORS设置
-- 测试健康检查端点：`GET /health`
+### Issue: API endpoints are unreachable
+- Confirm the MCP server is running
+- Verify the port configuration (defaults to 3398)
+- Check CORS settings
+- Test the health check endpoint: `GET /health`
 
-### 问题：如何查看当前配置的服务器
+### Issue: How to inspect configured servers
 ```bash
-# 获取所有启用的服务器
+# Retrieve enabled servers via the API
 curl http://localhost:3398/api/mcp-servers?enabled=true
 
-# 直接查询数据库
+# Query the database directly
 sqlite3 tools_vector.db "SELECT server_name, server_type, url, command FROM mcp_servers WHERE enabled = 1;"
 ```
